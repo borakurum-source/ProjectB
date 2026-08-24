@@ -31,6 +31,13 @@ function getGemini(): GoogleGenAI {
   return geminiClient;
 }
 
+// Runtime memory fallback for Perplexity API Key
+let globalPerplexityKey = process.env.PERPLEXITY_API_KEY || '';
+
+function getPerplexityApiKey(): string {
+  return process.env.PERPLEXITY_API_KEY || globalPerplexityKey || '';
+}
+
 // -------------------------------------------------------------
 // Helper: Extract domain from title / string
 // -------------------------------------------------------------
@@ -74,15 +81,33 @@ function matchDomainExact(sourceDomain: string | null, targetDomain: string): bo
 
 // Health check & environment status
 app.get('/api/health', (req, res) => {
-  const hasKey = Boolean(process.env.GEMINI_API_KEY);
+  const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
+  const hasPerplexityKey = Boolean(getPerplexityApiKey());
   res.json({
     status: 'ok',
-    apiKeyConfigured: hasKey,
+    apiKeyConfigured: hasGeminiKey,
+    perplexityApiKeyConfigured: hasPerplexityKey,
     defaultEngine: 'gemini-grounded',
     availableEngines: [
       { id: 'gemini-grounded', label: 'Gemini Grounded', supportsGrounding: true, enabled: true },
-      { id: 'perplexity-sonar', label: 'Perplexity Sonar', supportsGrounding: true, enabled: false }
+      { id: 'perplexity-sonar', label: 'Perplexity Sonar', supportsGrounding: true, enabled: hasPerplexityKey }
     ]
+  });
+});
+
+// Configure or check Perplexity API key
+app.post('/api/settings/perplexity-key', (req, res) => {
+  const { apiKey } = req.body;
+  if (typeof apiKey === 'string') {
+    globalPerplexityKey = apiKey.trim();
+    if (globalPerplexityKey) {
+      process.env.PERPLEXITY_API_KEY = globalPerplexityKey;
+    }
+  }
+  const configured = Boolean(getPerplexityApiKey());
+  res.json({
+    status: 'ok',
+    configured,
   });
 });
 
@@ -366,56 +391,126 @@ async function executeSingleRun(params: {
   let rawGroundingChunks: any[] = [];
   const webSearchQueries: string[] = [];
 
-  try {
-    const call1Response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: params.promptText, // Verbatim prompt
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
-    });
-
-    answerText = call1Response.text || '';
-
-    // Extract grounding metadata safely
-    const candidate = call1Response.candidates?.[0];
-    const groundingMetadata = candidate?.groundingMetadata;
-    rawGroundingChunks = groundingMetadata?.groundingChunks || [];
-
-    if (groundingMetadata?.webSearchQueries) {
-      webSearchQueries.push(...groundingMetadata.webSearchQueries);
+  if (params.engine === 'perplexity-sonar') {
+    const perplexityKey = getPerplexityApiKey();
+    if (!perplexityKey) {
+      return {
+        answerText: '',
+        groundingSources: [],
+        groundingChunks: [],
+        webSearchQueries: [],
+        brandMentioned: false,
+        brandCited: false,
+        position: null,
+        prominence: null,
+        mentionedBrands: [],
+        orderedList: false,
+        rankedNames: [],
+        answerFormat: 'prose',
+        error: 'PERPLEXITY_API_KEY is missing. Please configure a Perplexity API key in Settings.',
+      };
     }
 
-    if (groundingMetadata?.groundingChunks) {
-      for (const chunk of groundingMetadata.groundingChunks) {
-        if (chunk.web) {
-          const uri = chunk.web.uri || '';
-          const displayTitle = chunk.web.title || uri;
-          const resolvedDomain = extractDomain(chunk.web.title, chunk.web.uri);
-          groundingSources.push({
-            uri,
-            displayTitle,
-            resolvedDomain,
-          });
+    try {
+      const pRes = await fetch('https://api.perplexity.ai/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${perplexityKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'sonar',
+          messages: [{ role: 'user', content: params.promptText }],
+        }),
+      });
+
+      if (!pRes.ok) {
+        const errBody = await pRes.text();
+        throw new Error(`Perplexity API HTTP ${pRes.status}: ${errBody}`);
+      }
+
+      const pData = await pRes.json();
+      answerText = pData.choices?.[0]?.message?.content || '';
+      const citations: string[] = pData.citations || [];
+
+      for (const uri of citations) {
+        const resolvedDomain = extractDomain(undefined, uri);
+        groundingSources.push({
+          uri,
+          displayTitle: resolvedDomain || uri,
+          resolvedDomain,
+        });
+      }
+      webSearchQueries.push(params.promptText);
+    } catch (err: any) {
+      return {
+        answerText: '',
+        groundingSources: [],
+        groundingChunks: [],
+        webSearchQueries: [],
+        brandMentioned: false,
+        brandCited: false,
+        position: null,
+        prominence: null,
+        mentionedBrands: [],
+        orderedList: false,
+        rankedNames: [],
+        answerFormat: 'prose',
+        error: `Call 1 (Perplexity Sonar) failed: ${err?.message || String(err)}`,
+      };
+    }
+  } else {
+    try {
+      const call1Response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: params.promptText, // Verbatim prompt
+        config: {
+          tools: [{ googleSearch: {} }],
+        },
+      });
+
+      answerText = call1Response.text || '';
+
+      // Extract grounding metadata safely
+      const candidate = call1Response.candidates?.[0];
+      const groundingMetadata = candidate?.groundingMetadata;
+      rawGroundingChunks = groundingMetadata?.groundingChunks || [];
+
+      if (groundingMetadata?.webSearchQueries) {
+        webSearchQueries.push(...groundingMetadata.webSearchQueries);
+      }
+
+      if (groundingMetadata?.groundingChunks) {
+        for (const chunk of groundingMetadata.groundingChunks) {
+          if (chunk.web) {
+            const uri = chunk.web.uri || '';
+            const displayTitle = chunk.web.title || uri;
+            const resolvedDomain = extractDomain(chunk.web.title, chunk.web.uri);
+            groundingSources.push({
+              uri,
+              displayTitle,
+              resolvedDomain,
+            });
+          }
         }
       }
+    } catch (err: any) {
+      return {
+        answerText: '',
+        groundingSources: [],
+        groundingChunks: [],
+        webSearchQueries: [],
+        brandMentioned: false,
+        brandCited: false,
+        position: null,
+        prominence: null,
+        mentionedBrands: [],
+        orderedList: false,
+        rankedNames: [],
+        answerFormat: 'prose',
+        error: `Call 1 (Grounded Answer) failed: ${err?.message || String(err)}`,
+      };
     }
-  } catch (err: any) {
-    return {
-      answerText: '',
-      groundingSources: [],
-      groundingChunks: [],
-      webSearchQueries: [],
-      brandMentioned: false,
-      brandCited: false,
-      position: null,
-      prominence: null,
-      mentionedBrands: [],
-      orderedList: false,
-      rankedNames: [],
-      answerFormat: 'prose',
-      error: `Call 1 (Grounded Answer) failed: ${err?.message || String(err)}`,
-    };
   }
 
   if (!answerText.trim()) {
@@ -607,9 +702,12 @@ app.post('/api/runs/execute-cycle', async (req, res) => {
     }
 
     if (engine === 'perplexity-sonar') {
-      return res.status(400).json({
-        error: 'Perplexity Sonar engine is currently disabled. Please configure a Perplexity API key in Settings.',
-      });
+      const pKey = getPerplexityApiKey();
+      if (!pKey) {
+        return res.status(400).json({
+          error: 'Perplexity Sonar engine is currently disabled. Please configure a Perplexity API key in Settings.',
+        });
+      }
     }
 
     const n = Math.max(1, Math.min(5, Number(runsPerPrompt) || 3));
@@ -643,7 +741,7 @@ app.post('/api/runs/execute-cycle', async (req, res) => {
           cycleId,
           promptId: prompt.id,
           engine,
-          model: 'gemini-2.5-flash',
+          model: engine === 'perplexity-sonar' ? 'sonar' : 'gemini-2.5-flash',
           runIndex: runIdx,
           runAt,
           ...result,

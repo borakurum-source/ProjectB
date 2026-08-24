@@ -120,7 +120,11 @@ export default function App() {
     engine: EngineId;
   }) => {
     setIsExecutingCycle(true);
-    setRunProgressStatus('Initializing Google Search Grounding & JSON Semantic Extraction...');
+    setRunProgressStatus(
+      config.engine === 'perplexity-sonar'
+        ? 'Initializing Perplexity Sonar Grounded Search & Gemini JSON Extraction...'
+        : 'Initializing Google Search Grounding & Gemini JSON Extraction...'
+    );
 
     try {
       const targetPrompts = clientPrompts.filter((p) => config.promptIds.includes(p.id));

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Prompt, Client, EngineId } from '../types';
 import { X, Play, Calculator } from 'lucide-react';
 
@@ -29,6 +29,18 @@ export function RunCycleModal({
   );
   const [runsPerPrompt, setRunsPerPrompt] = useState<number>(defaultRunsPerPrompt || 3);
   const [engine, setEngine] = useState<EngineId>(activeEngine || 'gemini-grounded');
+  const [isPerplexityConfigured, setIsPerplexityConfigured] = useState(false);
+
+  useEffect(() => {
+    fetch('/api/health')
+      .then((res) => res.json())
+      .then((data) => {
+        if (data?.perplexityApiKeyConfigured) {
+          setIsPerplexityConfigured(true);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Exact arithmetic calculation
   const promptCount = selectedPromptIds.length;
@@ -114,8 +126,8 @@ export function RunCycleModal({
                   </div>
                 </div>
                 <div className="border-t border-white/20 pt-2 text-[10px] text-slate-400 flex items-center justify-between">
-                  <span>Call 1: Gemini Grounded with Google Search</span>
-                  <span>Call 2: JSON Extraction</span>
+                  <span>{engine === 'perplexity-sonar' ? 'Call 1: Perplexity Sonar Grounded' : 'Call 1: Gemini Grounded with Google Search'}</span>
+                  <span>Call 2: Gemini JSON Extraction</span>
                 </div>
               </div>
 
@@ -170,12 +182,21 @@ export function RunCycleModal({
                     </button>
                     <button
                       type="button"
-                      disabled
-                      className="w-full py-1.5 px-2.5 rounded text-xs flex items-center justify-between bg-[#F3F4F6] text-[#9CA3AF] border border-[#E5E7EB] cursor-not-allowed uppercase tracking-wider"
-                      title="Configure Perplexity API key in Settings to enable"
+                      onClick={() => setEngine('perplexity-sonar')}
+                      disabled={!isPerplexityConfigured}
+                      className={`w-full py-1.5 px-2.5 rounded text-xs flex items-center justify-between transition-colors border ${
+                        engine === 'perplexity-sonar'
+                          ? 'bg-[#111827] text-white border-[#111827] font-bold uppercase tracking-wider'
+                          : isPerplexityConfigured
+                          ? 'bg-white border-[#D1D5DB] text-[#374151] hover:bg-[#F9FAFB]'
+                          : 'bg-[#F3F4F6] text-[#9CA3AF] border-[#E5E7EB] cursor-not-allowed uppercase tracking-wider'
+                      }`}
+                      title={isPerplexityConfigured ? 'Select Perplexity Sonar Engine' : 'Configure Perplexity API key in Settings to enable'}
                     >
                       <span>Perplexity Sonar</span>
-                      <span className="text-[10px] text-[#9CA3AF]">Disabled in Settings</span>
+                      <span className="text-[10px] opacity-80">
+                        {isPerplexityConfigured ? (engine === 'perplexity-sonar' ? 'Active' : 'Ready') : 'Key Required in Settings'}
+                      </span>
                     </button>
                   </div>
                 </div>
