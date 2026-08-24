@@ -1,0 +1,275 @@
+export type EngineId = 'gemini-grounded' | 'perplexity-sonar';
+
+export interface VisibilityEngineInfo {
+  id: EngineId;
+  label: string;
+  supportsGrounding: boolean;
+  enabled: boolean;
+  description: string;
+}
+
+export type IntentLayer = 'Informational' | 'Commercial' | 'Comparative' | 'Navigational' | 'Transactional';
+
+export interface Client {
+  id: string;
+  ownerId: string;
+  brandName: string;
+  aliases: string[];
+  domain: string;
+  competitorDomains: string[];
+  competitorBrands: string[];
+  industry: string;
+  market: string;
+  language: string;
+  isDemo?: boolean;
+  defaultRunsPerPrompt?: number;
+  scheduledCycleFrequency?: 'off' | 'weekly' | 'biweekly' | 'monthly';
+  createdAt: string;
+}
+
+export interface Prompt {
+  id: string;
+  ownerId: string;
+  clientId: string;
+  text: string;
+  intentLayer: IntentLayer;
+  category: string;
+  active: boolean;
+  createdAt: string;
+}
+
+export interface GroundingSource {
+  uri?: string;
+  redirectUri?: string;
+  displayTitle: string;
+  resolvedDomain: string | null;
+  snippet?: string;
+  supportedClaims?: string[];
+}
+
+export type Sentiment = 'positive' | 'neutral' | 'negative' | 'Positive' | 'Neutral' | 'Negative';
+
+export interface MentionedBrand {
+  name: string;
+  isClient: boolean;
+  isKnownCompetitor: boolean;
+  sentiment: Sentiment;
+  verbatimQuote: string;
+}
+
+export interface RawEngineResult {
+  engineId: EngineId;
+  model: string;
+  answerText: string;
+  groundingSources: GroundingSource[];
+  groundingChunks?: Array<{ web?: { uri?: string; title?: string } } | any>;
+  webSearchQueries: string[];
+  error?: string | null;
+}
+
+export interface VisibilityEngine {
+  id: EngineId;
+  label: string;
+  supportsGrounding: boolean;
+  run(prompt: string): Promise<RawEngineResult>;
+}
+
+export interface StructuredExtractionResult {
+  mentionedBrands: MentionedBrand[];
+  orderedList: boolean;
+  rankedNames: string[];
+  recommendedEntityType?: string;
+  answerFormat: 'list' | 'prose' | 'table' | 'steps';
+}
+
+export interface Run {
+  id: string;
+  ownerId: string;
+  clientId: string;
+  cycleId: string;
+  promptId: string;
+  engine: EngineId;
+  model: string;
+  runIndex: number;
+  runAt: string;
+  answerText: string;
+  groundingSources: GroundingSource[];
+  groundingChunks?: Array<{ web?: { uri?: string; title?: string } } | any>;
+  webSearchQueries: string[];
+  brandMentioned: boolean;
+  brandCited: boolean;
+  position: number | null; // integer position ONLY when ordered list, else null
+  prominence: number | null; // firstMentionOffset / answerLength (labeled experimental)
+  mentionedBrands: MentionedBrand[];
+  orderedList: boolean;
+  rankedNames: string[];
+  recommendedEntityType?: string;
+  answerFormat: 'list' | 'prose' | 'table' | 'steps';
+  error: string | null;
+}
+
+export interface RunCycle {
+  id: string;
+  ownerId: string;
+  clientId: string;
+  startedAt: string;
+  completedAt?: string;
+  engines: EngineId[];
+  runsPerPrompt: number;
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'partial';
+  callCount: number;
+  error?: string;
+  isRetest?: boolean;
+  retestedActionId?: string;
+}
+
+export type DiagnosisDimension =
+  | 'Intent Match'
+  | 'Entity Clarity'
+  | 'Answer Extractability'
+  | 'Content Coverage'
+  | 'Evidence / Authority'
+  | 'Structured Information';
+
+export type DiagnosisStatus = 'Strong' | 'Adequate' | 'Weak' | 'Missing' | 'Unknown';
+
+export interface DimensionEvaluation {
+  status: DiagnosisStatus;
+  explanation: string;
+  evidenceQuote?: string;
+}
+
+export interface Diagnostic {
+  id: string;
+  ownerId: string;
+  clientId: string;
+  promptId: string;
+  cycleId: string;
+  dimensions: Record<DiagnosisDimension, DimensionEvaluation>;
+  observedEvidence: string;
+  likelyGap: string;
+  confidence: 'High' | 'Medium' | 'Low';
+  recommendedActionSummary: string;
+  validationMethod: string;
+  createdAt: string;
+}
+
+export type ActionPriority = 'Critical' | 'High' | 'Medium' | 'Low';
+export type ActionImpact = 'High' | 'Medium' | 'Low';
+export type ActionEffort = 'High' | 'Medium' | 'Low';
+export type ActionStatus = 'Todo' | 'In Progress' | 'Implemented' | 'Retested';
+
+export interface ActionItem {
+  id: string;
+  ownerId: string;
+  clientId: string;
+  diagnosticId?: string;
+  promptIds: string[];
+  title: string;
+  why: string;
+  evidence: {
+    sourceUrl?: string;
+    quote?: string;
+    observedFact: string;
+  };
+  exactRecommendation: string;
+  priority: ActionPriority;
+  impact: ActionImpact;
+  effort: ActionEffort;
+  validation: string;
+  status: ActionStatus;
+  createdAt: string;
+  pageUrl?: string;
+  implementedAt?: string;
+  baselineMentionRate?: number;
+  retestMentionRate?: number;
+  baselineCitationRate?: number;
+  retestCitationRate?: number;
+  baselinePosition?: number | null;
+  retestPosition?: number | null;
+  retestDate?: string;
+}
+
+export interface PageAnalysisFinding {
+  dimension: string;
+  observation: string;
+  concreteSuggestion: string;
+}
+
+export interface PageAnalysis {
+  id: string;
+  ownerId: string;
+  clientId: string;
+  url: string;
+  targetPrompt?: string;
+  analyzedAt: string;
+  extractabilityScore?: number;
+  extractabilityStatus?: DiagnosisStatus;
+  hasSchemaMarkup?: boolean;
+  hasStructuredSchema?: boolean;
+  detectedSchemaTypes?: string[];
+  hasComparisonTables?: boolean;
+  hasComparisonTable?: boolean;
+  hasClearHeadingAnswers?: boolean;
+  entityClarityStatus: DiagnosisStatus;
+  actionableRecommendations?: string[];
+  contentLength?: number;
+  h1?: string;
+  h2Count?: number;
+  findings?: PageAnalysisFinding[];
+}
+
+export interface AppSettings {
+  defaultRunsPerPrompt: number;
+  activeEngine: EngineId;
+  perplexityApiKey?: string;
+  scheduledCycleFrequency?: 'off' | 'weekly' | 'biweekly' | 'monthly';
+}
+
+// Derived deterministic metric interfaces with explicit sample sizes
+export interface MetricValue<T = number> {
+  value: T;
+  sampleSize: number;
+  display: string;
+}
+
+export interface PromptAggregate {
+  promptId: string;
+  promptText: string;
+  category: string;
+  intentLayer: IntentLayer;
+  runsCount: number;
+  mentionRate: number; // 0 to 1
+  mentionCount: number;
+  citationRate: number; // 0 to 1
+  citationCount: number;
+  volatility: boolean; // true if mentionRate > 0 && mentionRate < 1
+  avgPosition: number | null;
+  prominence: number | null;
+  competitorMentionRates: Record<string, { rate: number; count: number }>;
+  topSourceDomains: { domain: string; count: number }[];
+  lastRunAt?: string;
+}
+
+export interface CycleAggregate {
+  cycleId: string;
+  clientId: string;
+  engine: EngineId;
+  startedAt: string;
+  totalRuns: number;
+  promptsCount: number;
+  runsPerPrompt?: number;
+  overallMentionRate: number;
+  overallCitationRate: number;
+  shareOfVoice: Record<string, { share: number; mentionCount: number }>;
+  volatilityCount: number;
+  leaderboardDomains: { domain: string; count: number; citationRate: number; sampleSize: number }[];
+}
+
+export interface OpportunityPrompt {
+  text: string;
+  intentLayer: IntentLayer;
+  category: string;
+  rationale: string;
+  targetCompetitor?: string;
+}
