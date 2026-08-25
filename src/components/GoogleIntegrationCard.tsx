@@ -2,7 +2,53 @@ import { useState, useEffect } from 'react';
 import { Link2, RefreshCw, Unlink, ExternalLink, ShieldCheck } from 'lucide-react';
 import { GoogleIntegrationState } from '../types';
 
-export function GoogleIntegrationCard() {
+interface GoogleIntegrationCardProps {
+  clientDomain?: string;
+  clientBrandName?: string;
+}
+
+// GSC site URLs come as either "sc-domain:example.com" (domain property) or
+// "https://example.com/" (URL-prefix property) — normalize both down to the
+// bare registrable domain so they can be compared to the client's domain.
+function normalizeDomain(value: string): string {
+  return value
+    .replace(/^sc-domain:/i, '')
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .replace(/\/.*$/, '')
+    .toLowerCase()
+    .trim();
+}
+
+function bestMatchingGscSite(sites: { siteUrl: string }[], domain: string): string | undefined {
+  const target = normalizeDomain(domain);
+  const exact = sites.find((s) => normalizeDomain(s.siteUrl) === target);
+  return exact?.siteUrl;
+}
+
+function bestMatchingGa4Property(
+  props: { propertyId: string; displayName: string }[],
+  domain: string,
+  brandName?: string
+): string | undefined {
+  const domainRoot = normalizeDomain(domain).split('.')[0]; // "snacksforparty.com" -> "snacksforparty"
+  const brandWords = (brandName || '')
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 2);
+
+  const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const domainMatch = props.find((p) => norm(p.displayName).includes(norm(domainRoot)));
+  if (domainMatch) return domainMatch.propertyId;
+
+  const brandMatch = props.find((p) => {
+    const label = p.displayName.toLowerCase();
+    return brandWords.length > 0 && brandWords.every((w) => label.includes(w));
+  });
+  return brandMatch?.propertyId;
+}
+
+export function GoogleIntegrationCard({ clientDomain, clientBrandName }: GoogleIntegrationCardProps) {
   const [googleState, setGoogleState] = useState<GoogleIntegrationState | null>(null);
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
@@ -10,13 +56,48 @@ export function GoogleIntegrationCard() {
   const [selectedProp, setSelectedProp] = useState('');
   const [savedMsg, setSavedMsg] = useState('');
 
+  const saveSelection = (site: string, prop: string) => {
+    fetch('/api/integrations/google/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selectedGscSite: site, selectedGa4PropertyId: prop, connected: true }),
+    }).catch((e) => console.error('Failed to auto-save matched Google properties:', e));
+  };
+
   const fetchStatus = async () => {
     try {
       const res = await fetch('/api/integrations/google/status');
       const data = await res.json();
       setGoogleState(data);
-      if (data.selectedGscSite) setSelectedSite(data.selectedGscSite);
-      if (data.selectedGa4PropertyId) setSelectedProp(data.selectedGa4PropertyId);
+
+      // If nothing has been explicitly selected yet, don't let the <select>
+      // silently fall back to whatever property happens to be first in the
+      // connected Google account's list (that account often manages many
+      // unrelated sites) — auto-pick the one matching this client's domain.
+      let site = data.selectedGscSite || '';
+      let prop = data.selectedGa4PropertyId || '';
+      let autoMatched = false;
+
+      if (!site && clientDomain && data.availableGscSites?.length) {
+        const matched = bestMatchingGscSite(data.availableGscSites, clientDomain);
+        if (matched) {
+          site = matched;
+          autoMatched = true;
+        }
+      }
+      if (!prop && clientDomain && data.availableGa4Properties?.length) {
+        const matched = bestMatchingGa4Property(data.availableGa4Properties, clientDomain, clientBrandName);
+        if (matched) {
+          prop = matched;
+          autoMatched = true;
+        }
+      }
+
+      setSelectedSite(site);
+      setSelectedProp(prop);
+      if (autoMatched && (site || prop)) {
+        saveSelection(site, prop);
+      }
     } catch (err) {
       console.error('Failed to fetch Google Integration status:', err);
     } finally {
@@ -110,9 +191,11 @@ export function GoogleIntegrationCard() {
             </div>
             <div className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5">
               {isConnected
-                ? `Account: ${googleState?.userEmail || 'user@example.com'} • Last sync: ${new Date(
-                    googleState?.lastSyncAt || Date.now()
-                  ).toLocaleTimeString()}`
+                ? `Account: ${googleState?.userEmail || '(email unavailable)'}${
+                    googleState?.lastSyncAt
+                      ? ` • Last sync: ${new Date(googleState.lastSyncAt).toLocaleTimeString()}`
+                      : ''
+                  }`
                 : 'Grant read-only access to view organic search metrics alongside AI Visibility.'}
             </div>
           </div>
@@ -138,6 +221,12 @@ export function GoogleIntegrationCard() {
         </div>
       </div>
 
+      {googleState?.error && (
+        <div className="text-xs text-[#DC2626] dark:text-[#FCA5A5] bg-[#FEF2F2] dark:bg-[#7F1D1D] p-3 border border-[#FECACA] dark:border-[#991B1B]">
+          {googleState.error}
+        </div>
+      )}
+
       {/* Property Selectors when Connected */}
       {isConnected && (
         <div className="p-4 border border-[#E5E7EB] dark:border-[#1E293B] bg-white dark:bg-[#0F172A] space-y-3">
@@ -151,6 +240,7 @@ export function GoogleIntegrationCard() {
                 onChange={(e) => setSelectedSite(e.target.value)}
                 className="w-full p-2 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs text-[#111827] dark:text-[#F8FAFC] focus:bg-white dark:focus:bg-[#0F172A] focus:border-[#111827] dark:focus:border-[#6366F1] focus:outline-hidden"
               >
+                <option value="">— Select property —</option>
                 {(googleState?.availableGscSites || []).map((s) => (
                   <option key={s.siteUrl} value={s.siteUrl}>
                     {s.siteUrl} ({s.permissionLevel})
@@ -168,6 +258,7 @@ export function GoogleIntegrationCard() {
                 onChange={(e) => setSelectedProp(e.target.value)}
                 className="w-full p-2 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs text-[#111827] dark:text-[#F8FAFC] focus:bg-white dark:focus:bg-[#0F172A] focus:border-[#111827] dark:focus:border-[#6366F1] focus:outline-hidden"
               >
+                <option value="">— Select property —</option>
                 {(googleState?.availableGa4Properties || []).map((p) => (
                   <option key={p.propertyId} value={p.propertyId}>
                     {p.displayName} ({p.propertyId})

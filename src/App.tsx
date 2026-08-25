@@ -10,21 +10,13 @@ import {
   EngineId,
   ActionStatus,
 } from './types';
-import {
-  demoClient,
-  demoPrompts,
-  demoRuns,
-  demoCycleAggregates,
-  demoActions,
-  demoPageAnalyses,
-  demoDiagnostics,
-} from './data/demoData';
 import { computePromptAggregate, computeCycleAggregate } from './utils/metrics';
 import { Navbar } from './components/Navbar';
 import { OverviewTab } from './components/tabs/OverviewTab';
 import { PromptsTab } from './components/tabs/PromptsTab';
 import { CompetitorsTab } from './components/tabs/CompetitorsTab';
 import { PagesTab } from './components/tabs/PagesTab';
+import { SearchInsightsTab } from './components/tabs/SearchInsightsTab';
 import { ActionsTab } from './components/tabs/ActionsTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
 import { RunCycleModal } from './components/RunCycleModal';
@@ -34,6 +26,27 @@ import { OpportunityModal } from './components/OpportunityModal';
 import { ReportModal } from './components/ReportModal';
 import { OnboardingModal } from './components/OnboardingModal';
 import { FileText, Play } from 'lucide-react';
+
+// Single-tenant for now: everything is scoped to this owner in the Neon DB
+// (see src/services/db-api.ts, mounted at /api/db in server.ts).
+const OWNER_ID = 'default-owner';
+
+type TabId = 'Overview' | 'Prompts' | 'Competitors' | 'Pages' | 'SearchInsights' | 'Actions' | 'Settings';
+
+const TAB_PATHS: Record<TabId, string> = {
+  Overview: '/',
+  Prompts: '/prompts',
+  Competitors: '/competitors',
+  Pages: '/pages',
+  SearchInsights: '/search-insights',
+  Actions: '/actions',
+  Settings: '/settings',
+};
+
+function tabFromPath(pathname: string): TabId {
+  const entry = (Object.entries(TAB_PATHS) as [TabId, string][]).find(([, path]) => path === pathname);
+  return entry ? entry[0] : 'Overview';
+}
 
 export default function App() {
   // Dark Mode State with localStorage & media query fallback
@@ -59,63 +72,87 @@ export default function App() {
 
   const toggleDarkMode = () => setDarkMode((prev) => !prev);
 
-  // Client Management State with localStorage persistence
-  const [clients, setClients] = useState<Client[]>(() => {
-    try {
-      const saved = localStorage.getItem('rag_signal_clients');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((c: Client) => {
-            if (c.id === demoClient.id || c.domain === demoClient.domain) {
-              return {
-                ...c,
-                competitorDomains: demoClient.competitorDomains,
-                competitorBrands: demoClient.competitorBrands,
-                categorizedCompetitors: demoClient.categorizedCompetitors,
-              };
-            }
-            return c;
-          });
-        }
-      }
-    } catch (e) {
-      console.error('Failed to parse saved clients:', e);
-    }
-    return [demoClient];
-  });
+  // Client Management State — persisted in Neon (/api/db/clients), not
+  // localStorage, so real client data survives across browsers/devices instead
+  // of living only in whichever browser last touched it.
+  const [clients, setClients] = useState<Client[]>([]);
+  const [clientsLoaded, setClientsLoaded] = useState(false);
+
+  useEffect(() => {
+    fetch(`/api/db/clients?ownerId=${encodeURIComponent(OWNER_ID)}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (Array.isArray(data)) setClients(data);
+      })
+      .catch((e) => console.error('Failed to load clients from DB:', e))
+      .finally(() => setClientsLoaded(true));
+  }, []);
+
+  const saveClientToDb = (client: Client) => {
+    fetch('/api/db/clients', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(client),
+    }).catch((e) => console.error('Failed to save client to DB:', e));
+  };
 
   const [activeClientId, setActiveClientId] = useState<string>(() => {
     try {
       const savedId = localStorage.getItem('rag_signal_active_client_id');
       if (savedId) return savedId;
     } catch {}
-    return demoClient.id;
+    return '';
   });
 
-  // Active client object
+  // Active client object — undefined when the workspace has no clients yet.
   const activeClient = useMemo(() => {
-    return clients.find((c) => c.id === activeClientId) || clients[0] || demoClient;
+    return clients.find((c) => c.id === activeClientId) || clients[0];
   }, [clients, activeClientId]);
 
-  // Tab State
-  const [activeTab, setActiveTab] = useState<
-    'Overview' | 'Prompts' | 'Competitors' | 'Pages' | 'Actions' | 'Settings'
-  >('Overview');
-
-  // Prompts, Runs, Cycles, Actions, Diagnostics State with localStorage persistence
-  const [prompts, setPrompts] = useState<Prompt[]>(() => {
-    try {
-      const saved = localStorage.getItem('rag_signal_prompts');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error('Failed to parse saved prompts:', e);
+  // First-run / empty-workspace routing: send the user straight into onboarding
+  // to create a real client instead of ever silently showing fabricated data.
+  // Gated on clientsLoaded so it doesn't flash onboarding while the DB fetch
+  // above is still in flight (clients starts at [] every load).
+  useEffect(() => {
+    if (clientsLoaded && clients.length === 0) {
+      setShowOnboardingModal(true);
     }
-    return demoPrompts;
-  });
+  }, [clientsLoaded, clients.length]);
+
+  // Tab State — synced to the URL (see TAB_PATHS) so each tab is a real,
+  // shareable, back/forward-navigable address instead of only in-memory state.
+  const [activeTab, setActiveTab] = useState<TabId>(() => tabFromPath(window.location.pathname));
+
+  const navigateTab = (tab: TabId) => {
+    setActiveTab(tab);
+    if (window.location.pathname !== TAB_PATHS[tab]) {
+      window.history.pushState(null, '', TAB_PATHS[tab]);
+    }
+  };
+
+  useEffect(() => {
+    const onPopState = () => setActiveTab(tabFromPath(window.location.pathname));
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
+  // Prompts are persisted in Neon (/api/db/prompts), scoped by clientId — loaded
+  // by the effect below whenever the active client changes. Runs, Cycles,
+  // Actions, and Diagnostics still use localStorage persistence.
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
+
+  useEffect(() => {
+    if (!activeClient) {
+      setPrompts([]);
+      return;
+    }
+    fetch(`/api/db/prompts?clientId=${encodeURIComponent(activeClient.id)}`)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (Array.isArray(data)) setPrompts(data);
+      })
+      .catch((e) => console.error('Failed to load prompts from DB:', e));
+  }, [activeClient?.id]);
 
   const [runs, setRuns] = useState<Run[]>(() => {
     try {
@@ -127,7 +164,8 @@ export default function App() {
     } catch (e) {
       console.error('Failed to parse saved runs:', e);
     }
-    return demoRuns;
+    // No fabricated measurement runs — visibility data only comes from real run cycles.
+    return [];
   });
 
   const [cycleAggregates, setCycleAggregates] = useState<CycleAggregate[]>(() => {
@@ -140,7 +178,7 @@ export default function App() {
     } catch (e) {
       console.error('Failed to parse saved cycles:', e);
     }
-    return demoCycleAggregates;
+    return [];
   });
 
   const [actions, setActions] = useState<ActionItem[]>(() => {
@@ -153,7 +191,7 @@ export default function App() {
     } catch (e) {
       console.error('Failed to parse saved actions:', e);
     }
-    return demoActions;
+    return [];
   });
 
   const [pageAnalyses, setPageAnalyses] = useState<PageAnalysis[]>(() => {
@@ -166,18 +204,13 @@ export default function App() {
     } catch (e) {
       console.error('Failed to parse saved pageAnalyses:', e);
     }
-    return demoPageAnalyses;
+    return [];
   });
 
-  // Automatically persist changes to localStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem('rag_signal_clients', JSON.stringify(clients));
-    } catch (e) {
-      console.error('Failed to save clients to localStorage:', e);
-    }
-  }, [clients]);
-
+  // Clients are saved to the DB individually at the point of mutation (see
+  // handleCompleteOnboarding, handleUpdateClient, etc.) rather than via a
+  // blanket effect — a DB upsert needs the specific changed record, not an
+  // "overwrite everything" call every time the array reference changes.
   useEffect(() => {
     try {
       localStorage.setItem('rag_signal_active_client_id', activeClientId);
@@ -186,13 +219,18 @@ export default function App() {
     }
   }, [activeClientId]);
 
+  // Batch-upsert prompts to the DB whenever the list changes (mirrors the old
+  // "save whole array" localStorage effect, just against /api/db instead). A
+  // save right after the load effect above just re-upserts the same rows —
+  // harmless, since it's an upsert, not an overwrite-and-delete.
   useEffect(() => {
-    try {
-      localStorage.setItem('rag_signal_prompts', JSON.stringify(prompts));
-    } catch (e) {
-      console.error('Failed to save prompts to localStorage:', e);
-    }
-  }, [prompts]);
+    if (!activeClient || prompts.length === 0) return;
+    fetch('/api/db/prompts/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompts }),
+    }).catch((e) => console.error('Failed to save prompts to DB:', e));
+  }, [prompts, activeClient]);
 
   useEffect(() => {
     try {
@@ -226,12 +264,26 @@ export default function App() {
     }
   }, [pageAnalyses]);
   const [diagnostics, setDiagnostics] = useState<Record<string, Diagnostic>>(() => {
-    const map: Record<string, Diagnostic> = {};
-    demoDiagnostics.forEach((d) => {
-      map[d.promptId] = d;
-    });
-    return map;
+    try {
+      const saved = localStorage.getItem('rag_signal_diagnostics');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to parse saved diagnostics:', e);
+    }
+    // No auto-seeded demo diagnostics — real diagnoses come from /api/diagnostics/generate.
+    return {};
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('rag_signal_diagnostics', JSON.stringify(diagnostics));
+    } catch (e) {
+      console.error('Failed to save diagnostics to localStorage:', e);
+    }
+  }, [diagnostics]);
 
   // Modals & Inspection State
   const [showRunModal, setShowRunModal] = useState(false);
@@ -240,26 +292,32 @@ export default function App() {
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [isExecutingCycle, setIsExecutingCycle] = useState(false);
   const [runProgressStatus, setRunProgressStatus] = useState('');
+  const [runProgress, setRunProgress] = useState<{ completed: number; total: number } | null>(null);
   const [inspectingPromptId, setInspectingPromptId] = useState<string | null>(null);
   const [diagnosingPrompt, setDiagnosingPrompt] = useState<Prompt | null>(null);
   const [isDiagnosing, setIsDiagnosing] = useState(false);
   const [isRetestingActionId, setIsRetestingActionId] = useState<string | null>(null);
 
   // Active Engine
-  const [activeEngine, setActiveEngine] = useState<EngineId>('gemini-grounded');
+  const [activeEngine, setActiveEngine] = useState<EngineId>('perplexity-sonar');
 
-  // Filter items by active client
+  // Filter items by active client. activeClient is undefined until a client
+  // exists (see the empty-workspace guard below) — these memos run on every
+  // render regardless, so they must tolerate that instead of crashing.
   const clientPrompts = useMemo(() => {
+    if (!activeClient) return [];
     return prompts.filter((p) => p.clientId === activeClient.id);
-  }, [prompts, activeClient.id]);
+  }, [prompts, activeClient]);
 
   const clientRuns = useMemo(() => {
+    if (!activeClient) return [];
     return runs.filter((r) => r.clientId === activeClient.id);
-  }, [runs, activeClient.id]);
+  }, [runs, activeClient]);
 
   const clientCycles = useMemo(() => {
+    if (!activeClient) return [];
     return cycleAggregates.filter((c) => c.clientId === activeClient.id);
-  }, [cycleAggregates, activeClient.id]);
+  }, [cycleAggregates, activeClient]);
 
   const latestCycle = useMemo(() => {
     if (clientCycles.length === 0) return null;
@@ -269,8 +327,9 @@ export default function App() {
   }, [clientCycles]);
 
   const clientActions = useMemo(() => {
+    if (!activeClient) return [];
     return actions.filter((a) => a.clientId === activeClient.id);
-  }, [actions, activeClient.id]);
+  }, [actions, activeClient]);
 
   // Compute deterministic prompt aggregates from the latest cycle runs (or all client runs)
   const promptAggregates = useMemo(() => {
@@ -284,6 +343,40 @@ export default function App() {
     });
   }, [clientPrompts, clientRuns, latestCycle, activeClient]);
 
+  // Polls a background run-cycle job started via POST /api/runs/execute-cycle
+  // until it finishes. Started as a background job (not one blocking request)
+  // because a full cycle's sequential grounded-search calls can take 8-10+
+  // minutes for 15 prompts — well past nginx's 300s proxy_read_timeout, which
+  // is exactly what silently killed every run cycle before this fix.
+  const pollExecutionJob = (jobId: string): Promise<{
+    status: 'completed' | 'failed';
+    runs: Run[];
+    runCycle: { id: string } | null;
+    error?: string;
+  }> => {
+    return new Promise((resolve) => {
+      const poll = async () => {
+        try {
+          const res = await fetch(`/api/runs/execute-cycle/${jobId}/status`);
+          if (!res.ok) {
+            resolve({ status: 'failed', runs: [], runCycle: null, error: `Lost track of the running job (HTTP ${res.status}).` });
+            return;
+          }
+          const data = await res.json();
+          setRunProgress({ completed: data.completed, total: data.total });
+          if (data.status === 'running') {
+            setTimeout(poll, 1500);
+          } else {
+            resolve(data);
+          }
+        } catch (err: any) {
+          resolve({ status: 'failed', runs: [], runCycle: null, error: err?.message || 'Lost connection while polling job status.' });
+        }
+      };
+      poll();
+    });
+  };
+
   // Execute Grounded Run Cycle (Connects to backend /api/runs/execute-cycle)
   const handleExecuteCycle = async (config: {
     promptIds: string[];
@@ -291,9 +384,10 @@ export default function App() {
     engine: EngineId;
   }) => {
     setIsExecutingCycle(true);
+    setRunProgress(null);
     setRunProgressStatus(
       config.engine === 'perplexity-sonar'
-        ? 'Initializing Perplexity Sonar Grounded Search & Gemini JSON Extraction...'
+        ? 'Initializing Perplexity Agent Grounded Search & Gemini JSON Extraction...'
         : 'Initializing Google Search Grounding & Gemini JSON Extraction...'
     );
 
@@ -312,46 +406,65 @@ export default function App() {
       });
 
       if (!response.ok) {
-        throw new Error(`Execution error: ${response.statusText}`);
+        const errBody = await response.json().catch(() => null);
+        throw new Error(errBody?.error || `Execution error: HTTP ${response.status}`);
       }
 
-      const result = await response.json();
-      if (result.success) {
-        const newCycle: CycleAggregate = result.cycleAggregate;
-        const newRuns: Run[] = result.runs;
+      const { jobId, total } = await response.json();
+      setRunProgress({ completed: 0, total });
+      const result = await pollExecutionJob(jobId);
 
-        setRuns((prev) => [...newRuns, ...prev]);
-        setCycleAggregates((prev) => [newCycle, ...prev]);
-
-        // If client was demo and we ran a live cycle, update timestamp
-        if (activeClient.isDemo) {
-          setClients((prev) =>
-            prev.map((c) =>
-              c.id === activeClient.id ? { ...c, isDemo: false } : c
-            )
-          );
-        }
-
-        setShowRunModal(false);
+      // Save whatever runs completed even on failure — a cycle that dies at
+      // run 22/30 shouldn't discard the 22 real measurements it already made.
+      if (result.runs.length > 0) {
+        setRuns((prev) => [...result.runs, ...prev]);
       }
+
+      if (result.status === 'failed') {
+        throw new Error(result.error || 'Run cycle failed partway through.');
+      }
+
+      const newCycle: CycleAggregate = computeCycleAggregate(result.runCycle!.id, result.runs, activeClient);
+      setCycleAggregates((prev) => [newCycle, ...prev]);
+
+      // If client was demo and we ran a live cycle, update timestamp
+      if (activeClient.isDemo) {
+        const updatedClient = { ...activeClient, isDemo: false };
+        setClients((prev) =>
+          prev.map((c) => (c.id === activeClient.id ? updatedClient : c))
+        );
+        saveClientToDb(updatedClient);
+      }
+
+      setShowRunModal(false);
     } catch (err: any) {
       console.error('Run cycle failed:', err);
       alert(`Measurement cycle failed: ${err.message || 'Check server connection'}`);
     } finally {
       setIsExecutingCycle(false);
       setRunProgressStatus('');
+      setRunProgress(null);
     }
   };
 
-  // Run 6-Dimension Diagnostic (Connects to backend /api/diagnose)
+  // Run 6-Dimension Diagnostic (Connects to backend /api/diagnostics/generate)
   const handleDiagnosePrompt = async (prompt: Prompt) => {
+    const pRuns = clientRuns.filter((r) => r.promptId === prompt.id);
+    // The diagnostic is evidence-backed by design — it needs at least one real
+    // measurement run to synthesize from, and correctly refuses to fabricate one.
+    // Failing that silently (previously: console.error only, no user feedback)
+    // just looked like a broken button, so check and explain upfront instead of
+    // round-tripping to the server for a 400.
+    if (pRuns.length === 0) {
+      alert('This prompt has no measurement runs yet. Run a measurement cycle (Overview → Run Cycle) for it first, then diagnose.');
+      return;
+    }
+
     setDiagnosingPrompt(prompt);
     setIsDiagnosing(true);
 
     try {
-      const pRuns = clientRuns.filter((r) => r.promptId === prompt.id);
-
-      const response = await fetch('/api/diagnose', {
+      const response = await fetch('/api/diagnostics/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -361,7 +474,10 @@ export default function App() {
         }),
       });
 
-      if (!response.ok) throw new Error('Diagnostic service failed');
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => null);
+        throw new Error(errBody?.error || 'Diagnostic service failed');
+      }
       const data = await response.json();
 
       if (data.diagnostic) {
@@ -370,8 +486,9 @@ export default function App() {
           [prompt.id]: data.diagnostic,
         }));
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error('Diagnosis failed:', err);
+      alert(`Diagnosis failed: ${err.message || 'Unknown error'}`);
     } finally {
       setIsDiagnosing(false);
     }
@@ -385,8 +502,7 @@ export default function App() {
       body: JSON.stringify({
         url,
         rawHtml,
-        clientBrand: activeClient.brandName,
-        clientDomain: activeClient.domain,
+        client: activeClient,
       }),
     });
 
@@ -415,47 +531,58 @@ export default function App() {
           client: activeClient,
           prompts: targetPrompts,
           runsPerPrompt: 3,
-          engine: 'gemini-grounded',
+          engine: activeEngine,
         }),
       });
 
-      if (!response.ok) throw new Error('Retest cycle failed');
-      const result = await response.json();
-
-      if (result.success) {
-        const newRuns: Run[] = result.runs;
-        setRuns((prev) => [...newRuns, ...prev]);
-        setCycleAggregates((prev) => [result.cycleAggregate, ...prev]);
-
-        // Compute new retest rates deterministically
-        const retestMentionCount = newRuns.filter((r) => r.brandMentioned).length;
-        const retestCitationCount = newRuns.filter((r) => r.brandCited).length;
-        const retestMentionRate = newRuns.length > 0 ? retestMentionCount / newRuns.length : 0;
-        const retestCitationRate = newRuns.length > 0 ? retestCitationCount / newRuns.length : 0;
-
-        const retestPositions = newRuns
-          .map((r) => r.position)
-          .filter((p): p is number => p !== null);
-        const retestPosition =
-          retestPositions.length > 0
-            ? Math.round(retestPositions.reduce((a, b) => a + b, 0) / retestPositions.length)
-            : undefined;
-
-        setActions((prev) =>
-          prev.map((a) =>
-            a.id === action.id
-              ? {
-                  ...a,
-                  status: 'Retested',
-                  retestDate: new Date().toISOString(),
-                  retestMentionRate: Math.max(retestMentionRate, (a.baselineMentionRate ?? 0) + 0.33),
-                  retestCitationRate: Math.max(retestCitationRate, (a.baselineCitationRate ?? 0) + 0.33),
-                  retestPosition: retestPosition ?? 2,
-                }
-              : a
-          )
-        );
+      if (!response.ok) {
+        const errBody = await response.json().catch(() => null);
+        throw new Error(errBody?.error || `Retest cycle failed: HTTP ${response.status}`);
       }
+      const { jobId } = await response.json();
+      const result = await pollExecutionJob(jobId);
+
+      if (result.runs.length > 0) {
+        setRuns((prev) => [...result.runs, ...prev]);
+      }
+      if (result.status === 'failed') {
+        throw new Error(result.error || 'Retest cycle failed partway through.');
+      }
+
+      const newRuns: Run[] = result.runs;
+      const newCycle = computeCycleAggregate(result.runCycle!.id, newRuns, activeClient);
+      setCycleAggregates((prev) => [newCycle, ...prev]);
+
+      // Real measured retest rates — no artificial floor. A retest that shows no
+      // improvement (or a regression) must be shown as exactly that, not bumped
+      // up to a guaranteed-looking +33%.
+      const retestMentionCount = newRuns.filter((r) => r.brandMentioned).length;
+      const retestCitationCount = newRuns.filter((r) => r.brandCited).length;
+      const retestMentionRate = newRuns.length > 0 ? retestMentionCount / newRuns.length : 0;
+      const retestCitationRate = newRuns.length > 0 ? retestCitationCount / newRuns.length : 0;
+
+      const retestPositions = newRuns
+        .map((r) => r.position)
+        .filter((p): p is number => p !== null);
+      const retestPosition =
+        retestPositions.length > 0
+          ? Math.round(retestPositions.reduce((a, b) => a + b, 0) / retestPositions.length)
+          : null;
+
+      setActions((prev) =>
+        prev.map((a) =>
+          a.id === action.id
+            ? {
+                ...a,
+                status: 'Retested',
+                retestDate: new Date().toISOString(),
+                retestMentionRate,
+                retestCitationRate,
+                retestPosition,
+              }
+            : a
+        )
+      );
     } catch (err: any) {
       console.error('Retest error:', err);
       alert(`Retest failed: ${err.message}`);
@@ -494,6 +621,11 @@ export default function App() {
   // Delete prompt
   const handleDeletePrompt = (promptId: string) => {
     setPrompts((prev) => prev.filter((p) => p.id !== promptId));
+    // The prompts batch-save effect only upserts — it never deletes rows that
+    // drop out of the array, so the DB row needs an explicit delete call too.
+    fetch(`/api/db/prompts/${promptId}`, { method: 'DELETE' }).catch((e) =>
+      console.error('Failed to delete prompt from DB:', e)
+    );
   };
 
   // Update prompt fields (for inline title editing)
@@ -512,6 +644,7 @@ export default function App() {
     setClients((prev) => [...prev, newClient]);
     setActiveClientId(newClient.id);
     setShowOnboardingModal(false);
+    saveClientToDb(newClient);
 
     // If requested, auto-discover initial seed prompts for this brand & market
     if (autoGeneratePrompts) {
@@ -520,7 +653,7 @@ export default function App() {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            clientBrand: newClient.brandName,
+            brandName: newClient.brandName,
             domain: newClient.domain,
             industry: newClient.industry,
             market: newClient.market,
@@ -551,53 +684,40 @@ export default function App() {
 
   // Update client
   const handleUpdateClient = (updated: Partial<Client>) => {
+    const updatedClient = { ...activeClient, ...updated };
     setClients((prev) =>
-      prev.map((c) => (c.id === activeClient.id ? { ...c, ...updated } : c))
+      prev.map((c) => (c.id === activeClient.id ? updatedClient : c))
     );
+    saveClientToDb(updatedClient);
   };
 
   // Reset Demo Data
-  const handleResetDemoData = () => {
-    if (confirm('Reset workspace to calibrated demo benchmark data?')) {
-      localStorage.removeItem('rag_signal_clients');
-      localStorage.removeItem('rag_signal_active_client_id');
-      localStorage.removeItem('rag_signal_prompts');
-      localStorage.removeItem('rag_signal_runs');
-      localStorage.removeItem('rag_signal_cycles');
-      localStorage.removeItem('rag_signal_actions');
-      localStorage.removeItem('rag_signal_page_analyses');
+  // Clear Mockup Data & Setup Real Client Workspace
+  const clearDemoWorkspace = () => {
+    localStorage.removeItem('rag_signal_clients');
+    localStorage.removeItem('rag_signal_active_client_id');
+    localStorage.removeItem('rag_signal_prompts');
+    localStorage.removeItem('rag_signal_runs');
+    localStorage.removeItem('rag_signal_cycles');
+    localStorage.removeItem('rag_signal_actions');
+    localStorage.removeItem('rag_signal_page_analyses');
+    localStorage.removeItem('rag_signal_diagnostics');
 
-      setClients([demoClient]);
-      setActiveClientId(demoClient.id);
-      setPrompts(demoPrompts);
-      setRuns(demoRuns);
-      setCycleAggregates(demoCycleAggregates);
-      setActions(demoActions);
-      setPageAnalyses(demoPageAnalyses);
-    }
+    setClients([]);
+    setActiveClientId('');
+    setPrompts([]);
+    setRuns([]);
+    setCycleAggregates([]);
+    setActions([]);
+    setPageAnalyses([]);
+    setDiagnostics({});
+
+    setShowOnboardingModal(true);
   };
 
-  // Clear Mockup Data & Setup Real Client Workspace
   const handleClearDemoDataAndStartReal = () => {
     if (confirm('Clear all demo benchmark data and set up a real client brand workspace?')) {
-      localStorage.removeItem('rag_signal_clients');
-      localStorage.removeItem('rag_signal_active_client_id');
-      localStorage.removeItem('rag_signal_prompts');
-      localStorage.removeItem('rag_signal_runs');
-      localStorage.removeItem('rag_signal_cycles');
-      localStorage.removeItem('rag_signal_actions');
-      localStorage.removeItem('rag_signal_page_analyses');
-
-      setClients([]);
-      setActiveClientId('');
-      setPrompts([]);
-      setRuns([]);
-      setCycleAggregates([]);
-      setActions([]);
-      setPageAnalyses([]);
-      setDiagnostics({});
-
-      setShowOnboardingModal(true);
+      clearDemoWorkspace();
     }
   };
 
@@ -622,6 +742,40 @@ export default function App() {
 
   const inspectingPrompt = prompts.find((p) => p.id === inspectingPromptId);
 
+  // Still loading clients from the DB — render nothing rather than flashing the
+  // "no client" onboarding screen while the fetch is in flight.
+  if (!clientsLoaded) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] dark:bg-[#090D16]" />
+    );
+  }
+
+  // Empty workspace: no client yet. Show onboarding only — never render the main
+  // dashboard against an undefined client, and never fall back to fabricated data.
+  if (!activeClient) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F8F9FA] dark:bg-[#090D16] text-[#1A1A1A] dark:text-[#F1F5F9] font-sans antialiased transition-colors px-4">
+        <div className="text-center space-y-2 max-w-sm">
+          <div className="text-sm font-bold uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC]">RAG Signal</div>
+          <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+            No client workspace yet. Set up your brand to start real, live-measured AI visibility runs.
+          </p>
+          <button
+            onClick={() => setShowOnboardingModal(true)}
+            className="mt-2 px-4 py-2 bg-[#111827] dark:bg-[#4338CA] text-white rounded text-xs font-bold uppercase tracking-wider"
+          >
+            Set Up Your Brand
+          </button>
+        </div>
+        <OnboardingModal
+          isOpen={showOnboardingModal}
+          onClose={() => setShowOnboardingModal(false)}
+          onComplete={handleCompleteOnboarding}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex flex-col md:flex-row bg-[#F8F9FA] dark:bg-[#090D16] text-[#1A1A1A] dark:text-[#F1F5F9] font-sans antialiased transition-colors">
       {/* Navigation Sidebar & Mobile Header */}
@@ -631,7 +785,7 @@ export default function App() {
         onSelectClient={(c) => setActiveClientId(c.id)}
         onNewClient={handleNewClient}
         activeTab={activeTab}
-        onSelectTab={setActiveTab}
+        onSelectTab={navigateTab}
         onOpenRunModal={() => setShowRunModal(true)}
         activeEngine={activeEngine}
         darkMode={darkMode}
@@ -688,7 +842,7 @@ export default function App() {
               prompts={clientPrompts}
               onInspectPrompt={(id) => setInspectingPromptId(id)}
               onOpenRunModal={() => setShowRunModal(true)}
-              onNavigateTab={setActiveTab}
+              onNavigateTab={navigateTab}
               onClearDemoData={handleClearDemoDataAndStartReal}
             />
           )}
@@ -746,10 +900,12 @@ export default function App() {
                   createdAt: new Date().toISOString(),
                 };
                 setActions((prev) => [newAct, ...prev]);
-                setActiveTab('Actions');
+                navigateTab('Actions');
               }}
             />
           )}
+
+          {activeTab === 'SearchInsights' && <SearchInsightsTab client={activeClient} />}
 
           {activeTab === 'Actions' && (
             <ActionsTab
@@ -778,7 +934,6 @@ export default function App() {
             <SettingsTab
               client={activeClient}
               onUpdateClient={handleUpdateClient}
-              onResetDemoData={handleResetDemoData}
               onClearDemoData={handleClearDemoDataAndStartReal}
               exportDataJson={handleExportJson}
             />
@@ -797,7 +952,20 @@ export default function App() {
           onClose={() => setShowRunModal(false)}
           isExecuting={isExecutingCycle}
           progressStatus={runProgressStatus}
+          runProgress={runProgress || undefined}
         />
+      )}
+
+      {/* Background run-cycle indicator — visible when the job's still going but
+          the modal above was dismissed, so it's never unclear whether it's still running. */}
+      {isExecutingCycle && !showRunModal && (
+        <button
+          onClick={() => setShowRunModal(true)}
+          className="fixed bottom-4 right-4 z-40 bg-[#111827] dark:bg-[#4338CA] text-white px-4 py-2.5 rounded-full shadow-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 hover:bg-black dark:hover:bg-[#3730A3] transition-colors"
+        >
+          <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+          Run Cycle: {runProgress ? `${runProgress.completed}/${runProgress.total}` : 'starting...'}
+        </button>
       )}
 
       {/* Run Inspector Modal */}

@@ -6,6 +6,7 @@ import { PresenceHeatmap } from '../charts/PresenceHeatmap';
 import { CompetitorHeatmap } from '../charts/CompetitorHeatmap';
 import { DomainLeaderboard } from '../charts/DomainLeaderboard';
 import { GscGa4VisibilityChart } from '../charts/GscGa4VisibilityChart';
+import { CorrelationScatterChart } from '../charts/CorrelationScatterChart';
 import { Radio, AlertCircle, ArrowUpRight, CheckCircle2, ShieldCheck, Play, ArrowRight, Grid, LayoutList } from 'lucide-react';
 
 interface OverviewTabProps {
@@ -232,6 +233,9 @@ export function OverviewTab({
         overallMentionRate={mentionRate}
         totalRuns={totalRunsInLatest}
       />
+
+      {/* AI Mention Rate vs Organic Search Correlation */}
+      <CorrelationScatterChart cycles={cycleAggregates} />
 
       {/* High-Priority Actions & Diagnostic Highlights */}
       <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs">

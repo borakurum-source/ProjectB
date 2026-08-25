@@ -318,7 +318,7 @@ export function RunInspectorModal({
                   <div className="flex items-center gap-2">
                     <span className="w-2 h-2 rounded-full bg-[#111827] dark:bg-[#6366F1]" />
                     <h3 className="text-xs font-bold text-[#111827] dark:text-[#F8FAFC] uppercase tracking-wider">
-                      Call 1 — Verbatim Grounded Answer Text (Model: {activeRun.model || 'gemini-3.6-flash'})
+                      Call 1 — Verbatim Grounded Answer Text (Model: {activeRun.model || 'gemini-3.7-flash'})
                     </h3>
                   </div>
                   <span className="text-xs text-[#9CA3AF] dark:text-[#64748B] font-mono">

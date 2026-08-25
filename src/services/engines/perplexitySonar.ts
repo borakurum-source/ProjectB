@@ -9,7 +9,7 @@ export class EngineDisabledError extends Error {
 
 export class PerplexitySonarEngine implements VisibilityEngine {
   readonly id = 'perplexity-sonar' as const;
-  readonly label = 'Perplexity Sonar' as const;
+  readonly label = 'Perplexity Agent' as const;
   readonly supportsGrounding = true;
   private apiKey: string | null = null;
 
@@ -46,7 +46,7 @@ export class PerplexitySonarEngine implements VisibilityEngine {
       const data = await response.json();
       return {
         engineId: 'perplexity-sonar',
-        model: 'sonar',
+        model: data.model || 'openai/gpt-5.6-sol',
         answerText: data.answerText || '',
         groundingSources: data.groundingSources || [],
         webSearchQueries: data.webSearchQueries || [],
@@ -55,11 +55,11 @@ export class PerplexitySonarEngine implements VisibilityEngine {
     } catch (err: any) {
       return {
         engineId: 'perplexity-sonar',
-        model: 'sonar',
+        model: 'openai/gpt-5.6-sol',
         answerText: '',
         groundingSources: [],
         webSearchQueries: [],
-        error: err?.message || 'Perplexity Sonar execution failed',
+        error: err?.message || 'Perplexity Agent execution failed',
       };
     }
   }

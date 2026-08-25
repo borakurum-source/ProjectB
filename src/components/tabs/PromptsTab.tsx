@@ -22,6 +22,7 @@ export function PromptsTab({
   client,
   onAddPrompt,
   onBulkAddPrompts,
+  onToggleActive,
   onDeletePrompt,
   onUpdatePrompt,
   onInspectPrompt,
@@ -375,7 +376,14 @@ export function PromptsTab({
                             <div className="text-[10px] text-[#9CA3AF] mt-0.5 font-mono flex items-center gap-2">
                               <span>ID: {p.id}</span>
                               <span>•</span>
-                              <span>Active: {p.active ? 'Yes' : 'Paused'}</span>
+                              <button
+                                type="button"
+                                onClick={() => onToggleActive(p.id)}
+                                title={p.active ? 'Click to pause this prompt' : 'Click to reactivate this prompt'}
+                                className={`hover:underline ${p.active ? 'text-[#059669] dark:text-[#34D399]' : 'text-[#D97706] dark:text-[#FBBF24]'}`}
+                              >
+                                Active: {p.active ? 'Yes' : 'Paused'}
+                              </button>
                             </div>
                           </div>
                         )}

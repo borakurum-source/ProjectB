@@ -11,6 +11,7 @@ interface RunCycleModalProps {
   onClose: () => void;
   isExecuting: boolean;
   progressStatus?: string;
+  runProgress?: { completed: number; total: number };
 }
 
 export function RunCycleModal({
@@ -22,6 +23,7 @@ export function RunCycleModal({
   onClose,
   isExecuting,
   progressStatus,
+  runProgress,
 }: RunCycleModalProps) {
   const activePrompts = prompts.filter((p) => p.active);
   const [selectedPromptIds, setSelectedPromptIds] = useState<string[]>(
@@ -78,21 +80,37 @@ export function RunCycleModal({
             </div>
             <h2 className="text-sm font-bold text-[#111827] dark:text-[#F8FAFC]">Execute New Grounded Run Cycle</h2>
           </div>
-          {!isExecuting && (
-            <button
-              onClick={onClose}
-              className="text-[#9CA3AF] hover:text-[#111827] dark:hover:text-[#F8FAFC] p-1.5 transition-colors"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          )}
+          <button
+            onClick={onClose}
+            title={isExecuting ? 'Hide — the run keeps going in the background' : undefined}
+            className="text-[#9CA3AF] hover:text-[#111827] dark:hover:text-[#F8FAFC] p-1.5 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
         {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-6 space-y-5">
           {isExecuting ? (
             <div className="py-12 text-center space-y-4">
-              <div className="w-12 h-12 border-2 border-[#111827] dark:border-[#818CF8] border-t-transparent rounded-full animate-spin mx-auto" />
+              {runProgress && runProgress.total > 0 ? (
+                <div className="max-w-md mx-auto space-y-2">
+                  <div className="text-2xl font-bold font-mono text-[#111827] dark:text-[#F8FAFC]">
+                    {runProgress.completed} / {runProgress.total}
+                  </div>
+                  <div className="w-full bg-[#E5E7EB] dark:bg-[#334155] h-2.5 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-[#111827] dark:bg-[#818CF8] transition-all duration-500"
+                      style={{ width: `${Math.round((runProgress.completed / runProgress.total) * 100)}%` }}
+                    />
+                  </div>
+                  <div className="text-[11px] text-[#6B7280] dark:text-[#94A3B8]">
+                    {Math.round((runProgress.completed / runProgress.total) * 100)}% complete — runs finish roughly every 10-40s each
+                  </div>
+                </div>
+              ) : (
+                <div className="w-12 h-12 border-2 border-[#111827] dark:border-[#818CF8] border-t-transparent rounded-full animate-spin mx-auto" />
+              )}
               <div>
                 <h3 className="text-xs font-bold uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC]">
                   Executing Grounded Run Cycle in Progress
@@ -102,7 +120,7 @@ export function RunCycleModal({
                 </p>
               </div>
               <div className="bg-[#F9FAFB] dark:bg-[#1E293B] p-3 border border-[#E5E7EB] dark:border-[#334155] max-w-md mx-auto text-xs text-[#6B7280] dark:text-[#94A3B8]">
-                Executing {totalApiCalls} total API requests ({promptCount} prompts × {runsPerPrompt} runs × 2 calls). Please keep this window open.
+                Running as a background job — you can close this modal and it'll keep going; reopening Overview will show the result once it's done.
               </div>
             </div>
           ) : (
@@ -126,7 +144,7 @@ export function RunCycleModal({
                   </div>
                 </div>
                 <div className="border-t border-white/20 pt-2 text-[10px] text-slate-400 flex items-center justify-between">
-                  <span>{engine === 'perplexity-sonar' ? 'Call 1: Perplexity Sonar Grounded' : 'Call 1: Gemini Grounded with Google Search'}</span>
+                  <span>{engine === 'perplexity-sonar' ? 'Call 1: Perplexity Agent Grounded' : 'Call 1: Gemini Grounded with Google Search'}</span>
                   <span>Call 2: Gemini JSON Extraction</span>
                 </div>
               </div>
@@ -191,9 +209,9 @@ export function RunCycleModal({
                           ? 'bg-white dark:bg-[#0F172A] border-[#D1D5DB] dark:border-[#334155] text-[#374151] dark:text-[#CBD5E1] hover:bg-[#F9FAFB]'
                           : 'bg-[#F3F4F6] dark:bg-[#1E293B] text-[#9CA3AF] dark:text-[#64748B] border-[#E5E7EB] dark:border-[#334155] cursor-not-allowed uppercase tracking-wider'
                       }`}
-                      title={isPerplexityConfigured ? 'Select Perplexity Sonar Engine' : 'Configure Perplexity API key in Settings to enable'}
+                      title={isPerplexityConfigured ? 'Select Perplexity Agent Engine' : 'Configure Perplexity API key in Settings to enable'}
                     >
-                      <span>Perplexity Sonar</span>
+                      <span>Perplexity Agent</span>
                       <span className="text-[10px] opacity-80">
                         {isPerplexityConfigured ? (engine === 'perplexity-sonar' ? 'Active' : 'Ready') : 'Key Required in Settings'}
                       </span>

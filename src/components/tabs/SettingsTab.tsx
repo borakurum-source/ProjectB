@@ -6,15 +6,55 @@ import { GoogleIntegrationCard } from '../GoogleIntegrationCard';
 interface SettingsTabProps {
   client: Client;
   onUpdateClient: (updated: Partial<Client>) => void;
-  onResetDemoData: () => void;
   onClearDemoData?: () => void;
   exportDataJson: () => void;
 }
 
+// All grounding-capable (web_search-enabled) models verified working through the
+// Perplexity Agent API (POST /v1/agent), grouped by provider. Kept in sync manually —
+// re-verify against https://docs.perplexity.ai/docs/agent-api/models before adding entries.
+const PERPLEXITY_GROUNDING_MODELS: { provider: string; models: { id: string; label: string }[] }[] = [
+  {
+    provider: 'OpenAI',
+    models: [
+      { id: 'openai/gpt-5.6-sol', label: 'GPT-5.6 Sol (Recommended)' },
+      { id: 'openai/gpt-5.6-terra', label: 'GPT-5.6 Terra' },
+      { id: 'openai/gpt-5.5', label: 'GPT-5.5' },
+    ],
+  },
+  {
+    provider: 'Anthropic',
+    models: [
+      { id: 'anthropic/claude-opus-5', label: 'Claude Opus 5 (Flagship)' },
+      { id: 'anthropic/claude-sonnet-5', label: 'Claude Sonnet 5' },
+      { id: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5 (Fast/Cheap)' },
+    ],
+  },
+  {
+    provider: 'Google',
+    models: [
+      { id: 'google/gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
+      { id: 'google/gemini-3.7-flash', label: 'Gemini 3.7 Flash' },
+    ],
+  },
+  {
+    provider: 'xAI',
+    models: [
+      { id: 'xai/grok-4.6', label: 'Grok 4.6' },
+    ],
+  },
+  {
+    provider: 'Perplexity',
+    models: [
+      { id: 'perplexity/sonar', label: 'Sonar (native, fastest/cheapest)' },
+      { id: 'perplexity/deepseek-v4-flash-0731', label: 'DeepSeek v4 Flash' },
+    ],
+  },
+];
+
 export function SettingsTab({
   client,
   onUpdateClient,
-  onResetDemoData,
   onClearDemoData,
   exportDataJson,
 }: SettingsTabProps) {
@@ -52,6 +92,9 @@ export function SettingsTab({
   // Gemini Model State
   const [geminiModel, setGeminiModel] = useState('gemini-3.7-flash');
 
+  // Perplexity Agent Model State
+  const [perplexityModel, setPerplexityModel] = useState('openai/gpt-5.6-sol');
+
   // Sync local input states when client prop updates
   useEffect(() => {
     setBrandName(client.brandName);
@@ -85,6 +128,9 @@ export function SettingsTab({
         if (data?.geminiModel) {
           setGeminiModel(data.geminiModel);
         }
+        if (data?.perplexityModel) {
+          setPerplexityModel(data.perplexityModel);
+        }
       })
       .catch(() => {});
   }, []);
@@ -102,6 +148,19 @@ export function SettingsTab({
     }
   };
 
+  const handlePerplexityModelChange = async (newModel: string) => {
+    setPerplexityModel(newModel);
+    try {
+      await fetch('/api/settings/perplexity-model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: newModel }),
+      });
+    } catch (err) {
+      console.error('Failed to update Perplexity model', err);
+    }
+  };
+
   const handleSavePerplexityKey = async (e: FormEvent) => {
     e.preventDefault();
     setSavingKey(true);
@@ -115,7 +174,7 @@ export function SettingsTab({
       const data = await res.json();
       if (data.configured) {
         setPerplexityConfigured(true);
-        setKeySaveMsg('Perplexity Sonar engine activated!');
+        setKeySaveMsg('Perplexity Agent engine activated!');
         setPerplexityKeyInput('');
       } else {
         setPerplexityConfigured(false);
@@ -193,9 +252,22 @@ export function SettingsTab({
           language: p.language || language,
         };
 
+        // Only auto-fill competitors for a brand-new client with none tracked yet.
+        // A regenerate click must never clobber an already-curated competitor
+        // list with a handful of freshly AI-guessed names — that's exactly what
+        // desynced competitorBrands/competitorDomains from categorizedCompetitors
+        // in production once already.
+        const hasExistingCompetitors = client.competitorBrands.length > 0;
         if (aliasesArray.length > 0) updatedFields.aliases = aliasesArray;
-        if (compBrandsArray.length > 0) updatedFields.competitorBrands = compBrandsArray;
-        if (compDomainsArray.length > 0) updatedFields.competitorDomains = compDomainsArray;
+        if (compBrandsArray.length > 0 && !hasExistingCompetitors) {
+          updatedFields.competitorBrands = compBrandsArray;
+          updatedFields.competitorDomains = compDomainsArray;
+          updatedFields.categorizedCompetitors = compBrandsArray.map((brand: string, idx: number) => ({
+            brand,
+            domain: compDomainsArray[idx] || '',
+            category: 'NO ECOMMERCE' as const,
+          }));
+        }
 
         if (p.shortSummary) setShortSummary(p.shortSummary);
         if (p.positioning) setPositioning(p.positioning);
@@ -208,8 +280,10 @@ export function SettingsTab({
         if (p.market) setMarket(p.market);
         if (p.language) setLanguage(p.language);
         if (aliasesArray.length > 0) setAliases(aliasesArray.join(', '));
-        if (compBrandsArray.length > 0) setCompetitorBrands(compBrandsArray.join(', '));
-        if (compDomainsArray.length > 0) setCompetitorDomains(compDomainsArray.join(', '));
+        if (compBrandsArray.length > 0 && !hasExistingCompetitors) {
+          setCompetitorBrands(compBrandsArray.join(', '));
+          setCompetitorDomains(compDomainsArray.join(', '));
+        }
 
         // Automatically persist auto-generated profile to client state/Firestore
         onUpdateClient(updatedFields);
@@ -227,6 +301,28 @@ export function SettingsTab({
 
   const handleSave = (e: FormEvent) => {
     e.preventDefault();
+
+    const brandsArray = competitorBrands.split(',').map((c) => c.trim()).filter(Boolean);
+    const domainsArray = competitorDomains.split(',').map((d) => d.trim()).filter(Boolean);
+
+    // Keep categorizedCompetitors (used by the Competitors tab for the
+    // Ecommerce/No Ecommerce badge) in lockstep with the two flat text fields
+    // above — otherwise editing brands/domains here silently desyncs it, since
+    // this was the only place that could change them without touching it too.
+    // Existing entries keep their known category (matched by brand name);
+    // brand-new entries default to 'NO ECOMMERCE' since there's no reliable way
+    // to infer it from a name/domain alone.
+    const categorizedCompetitors = brandsArray.map((brand, idx) => {
+      const existing = client.categorizedCompetitors?.find(
+        (c) => c.brand.toLowerCase() === brand.toLowerCase()
+      );
+      return {
+        brand,
+        domain: domainsArray[idx] || existing?.domain || '',
+        category: existing?.category || ('NO ECOMMERCE' as const),
+      };
+    });
+
     onUpdateClient({
       brandName: brandName.trim(),
       domain: domain.trim(),
@@ -241,8 +337,9 @@ export function SettingsTab({
       productsServices: productsServices.trim(),
       keyDifferentiators: keyDifferentiators.trim(),
       aliases: aliases.split(',').map((a) => a.trim()).filter(Boolean),
-      competitorBrands: competitorBrands.split(',').map((c) => c.trim()).filter(Boolean),
-      competitorDomains: competitorDomains.split(',').map((d) => d.trim()).filter(Boolean),
+      competitorBrands: brandsArray,
+      competitorDomains: domainsArray,
+      categorizedCompetitors,
       defaultRunsPerPrompt: defaultN,
     });
     setSavedSuccess(true);
@@ -266,11 +363,12 @@ export function SettingsTab({
             <button
               type="button"
               onClick={handleGenerateProfile}
-              disabled={generatingProfile || !brandName || !domain}
+              disabled={generatingProfile || !brandName || !domain || !perplexityConfigured}
+              title={!perplexityConfigured ? 'Requires a Perplexity API key — configure it below first.' : undefined}
               className="px-3 py-1.5 bg-[#EEF2FF] dark:bg-[#312E81] hover:bg-[#E0E7FF] dark:hover:bg-[#3730A3] border border-[#C7D2FE] dark:border-[#4338CA] text-[#4338CA] dark:text-[#A5B4FC] disabled:opacity-50 rounded text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5 shadow-xs"
             >
               <Sparkles className={`w-3.5 h-3.5 ${generatingProfile ? 'animate-spin' : ''}`} />
-              {generatingProfile ? 'Generating...' : 'Auto-Generate via AI'}
+              {generatingProfile ? 'Generating...' : !perplexityConfigured ? 'Auto-Generate (Perplexity key required)' : 'Auto-Generate via AI'}
             </button>
             <button
               type="submit"
@@ -559,8 +657,8 @@ export function SettingsTab({
               <span className="text-xs font-medium text-[#374151] dark:text-[#CBD5E1]">Target Gemini Model:</span>
               <div className="flex items-center gap-1.5 flex-wrap">
                 {[
-                  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash (Recommended)' },
-                  { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash' },
+                  { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash (Recommended)' },
+                  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
                 ].map((m) => (
                   <button
                     key={m.id}
@@ -588,7 +686,7 @@ export function SettingsTab({
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="font-bold text-xs text-[#111827] dark:text-[#F8FAFC]">Perplexity Sonar</span>
+                    <span className="font-bold text-xs text-[#111827] dark:text-[#F8FAFC]">Perplexity Agent (Multi-Provider Grounding)</span>
                     {perplexityConfigured ? (
                       <span className="text-[10px] bg-[#ECFDF5] dark:bg-[#064E3B] text-[#065F46] dark:text-[#A7F3D0] border border-[#A7F3D0] dark:border-[#065F46] px-1.5 py-0.5 font-bold uppercase tracking-wider">
                         ACTIVE
@@ -600,7 +698,7 @@ export function SettingsTab({
                     )}
                   </div>
                   <div className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5">
-                    Model: <code className="text-[#111827] dark:text-[#F8FAFC] font-mono">sonar</code> • Web Grounded Answers & Citations
+                    Model: <code className="text-[#111827] dark:text-[#F8FAFC] font-mono font-bold">{perplexityModel}</code> • Web Grounded Answers & Citations
                   </div>
                 </div>
               </div>
@@ -613,6 +711,35 @@ export function SettingsTab({
                 )}
               </div>
             </div>
+
+            {/* Perplexity Model Selector — all grounding-capable models the Agent API allows */}
+            {perplexityConfigured && (
+              <div className="pt-2 border-t border-[#E5E7EB] dark:border-[#334155] space-y-1.5">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                  <span className="text-xs font-medium text-[#374151] dark:text-[#CBD5E1]">
+                    Grounding Model for Prompt Checking (Call 1 measurement runs):
+                  </span>
+                  <select
+                    value={perplexityModel}
+                    onChange={(e) => handlePerplexityModelChange(e.target.value)}
+                    className="px-2.5 py-1.5 text-[11px] font-mono font-bold rounded border bg-white dark:bg-[#0F172A] text-[#111827] dark:text-[#F8FAFC] border-[#D1D5DB] dark:border-[#334155] focus:border-[#111827] dark:focus:border-[#6366F1] focus:outline-hidden cursor-pointer"
+                  >
+                    {PERPLEXITY_GROUNDING_MODELS.map((group) => (
+                      <optgroup key={group.provider} label={group.provider}>
+                        {group.models.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                </div>
+                <div className="text-[10px] text-[#9CA3AF] dark:text-[#64748B]">
+                  Every model above runs with the <code className="font-mono">web_search</code> tool enabled — the actual model used is stored and shown on each run. All {PERPLEXITY_GROUNDING_MODELS.reduce((n, g) => n + g.models.length, 0)} options are the grounding-capable models the Perplexity Agent API currently allows.
+                </div>
+              </div>
+            )}
 
             {/* Perplexity Key Form */}
             <form onSubmit={handleSavePerplexityKey} className="pt-2 border-t border-[#E5E7EB] dark:border-[#334155] flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -716,7 +843,7 @@ export function SettingsTab({
           </p>
         </div>
 
-        <GoogleIntegrationCard />
+        <GoogleIntegrationCard clientDomain={client.domain} clientBrandName={client.brandName} />
       </div>
 
       {/* Data Export & Reset */}
@@ -746,13 +873,6 @@ export function SettingsTab({
               <RefreshCw className="w-3.5 h-3.5" /> Clear Mock Data & Setup Real Client
             </button>
           )}
-
-          <button
-            onClick={onResetDemoData}
-            className="px-3.5 py-2 bg-[#FEF3C7] dark:bg-[#78350F] hover:bg-[#FDE68A] dark:hover:bg-[#B45309] text-[#D97706] dark:text-[#FDE68A] rounded text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5 border border-[#FDE68A] dark:border-[#B45309] shadow-xs"
-          >
-            <RefreshCw className="w-3.5 h-3.5" /> Reset Calibrated Demo Workspace
-          </button>
         </div>
       </div>
     </div>

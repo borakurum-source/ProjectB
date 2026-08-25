@@ -16,6 +16,7 @@ import {
   Settings,
   Sun,
   Moon,
+  Search,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -23,8 +24,8 @@ interface NavbarProps {
   activeClient: Client;
   onSelectClient: (client: Client) => void;
   onNewClient: () => void;
-  activeTab: 'Overview' | 'Prompts' | 'Competitors' | 'Pages' | 'Actions' | 'Settings';
-  onSelectTab: (tab: 'Overview' | 'Prompts' | 'Competitors' | 'Pages' | 'Actions' | 'Settings') => void;
+  activeTab: 'Overview' | 'Prompts' | 'Competitors' | 'Pages' | 'SearchInsights' | 'Actions' | 'Settings';
+  onSelectTab: (tab: 'Overview' | 'Prompts' | 'Competitors' | 'Pages' | 'SearchInsights' | 'Actions' | 'Settings') => void;
   onOpenRunModal: () => void;
   activeEngine: EngineId;
   darkMode?: boolean;
@@ -47,7 +48,7 @@ export function Navbar({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const tabs: Array<{
-    id: 'Overview' | 'Prompts' | 'Competitors' | 'Pages' | 'Actions' | 'Settings';
+    id: 'Overview' | 'Prompts' | 'Competitors' | 'Pages' | 'SearchInsights' | 'Actions' | 'Settings';
     label: string;
     icon: typeof LayoutDashboard;
   }> = [
@@ -55,6 +56,7 @@ export function Navbar({
     { id: 'Prompts', label: 'Prompts', icon: MessageSquareQuote },
     { id: 'Competitors', label: 'Competitors', icon: Users },
     { id: 'Pages', label: 'Pages', icon: FileSearch },
+    { id: 'SearchInsights', label: 'Search Insights', icon: Search },
     { id: 'Actions', label: 'Actions', icon: CheckSquare },
     { id: 'Settings', label: 'Settings', icon: Settings },
   ];

@@ -324,7 +324,7 @@ export function PagesTab({
                 <Globe className="w-5 h-5 text-[#4338CA] dark:text-[#818CF8]" />
                 <div>
                   <h3 className="font-bold text-sm text-[#111827] dark:text-[#F8FAFC]">AI Bot Crawlability Checker</h3>
-                  <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">Checking robots.txt for {urlInput}</p>
+                  <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">robots.txt + a live fetch per bot for {urlInput}</p>
                 </div>
               </div>
               <button onClick={() => setShowCrawlModal(false)} className="px-2 py-1 text-xs font-bold text-[#6B7280] dark:text-[#94A3B8] hover:text-[#111827] dark:hover:text-[#F8FAFC] bg-[#E5E7EB] dark:bg-[#334155] rounded cursor-pointer">
@@ -335,13 +335,42 @@ export function PagesTab({
               {loadingCrawl ? (
                 <div className="p-12 text-center space-y-3">
                   <Globe className="w-8 h-8 text-[#4338CA] dark:text-[#818CF8] animate-spin mx-auto" />
-                  <p className="text-xs font-semibold text-[#374151] dark:text-[#CBD5E1]">Fetching and parsing robots.txt...</p>
+                  <p className="text-xs font-semibold text-[#374151] dark:text-[#CBD5E1]">Checking robots.txt and live-fetching as each bot (this takes a few seconds)...</p>
                 </div>
               ) : crawlData ? (
                 <div className="space-y-6">
                   <div>
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] mb-2">Bot Status</h4>
-                    <div className="border border-[#E5E7EB] dark:border-[#334155] rounded overflow-hidden divide-y divide-[#E5E7EB] dark:divide-[#334155]">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] mb-2">Server Access Check</h4>
+                    <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] mb-2">{crawlData.serverAccessCaveat}</p>
+                    <div className="border border-[#E5E7EB] dark:border-[#334155] rounded overflow-hidden divide-y divide-[#E5E7EB] dark:divide-[#334155] max-h-72 overflow-y-auto">
+                      {crawlData.serverAccessResults?.map((b: any, idx: number) => (
+                        <div key={idx} className="flex items-center justify-between p-3 bg-white dark:bg-[#0F172A]">
+                          <div>
+                            <div className="font-bold text-[#111827] dark:text-[#F8FAFC] text-sm">{b.name}</div>
+                            <div className="text-[10px] text-[#6B7280] dark:text-[#94A3B8] uppercase tracking-wider">{b.owner}{b.httpStatus ? ` • HTTP ${b.httpStatus}` : ''}</div>
+                          </div>
+                          <div>
+                            {b.status === 'ALLOWED' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#ECFDF5] dark:bg-[#064E3B] text-[#065F46] dark:text-[#A7F3D0] border border-[#A7F3D0] dark:border-[#065F46] text-xs font-bold uppercase tracking-wider rounded">
+                                <CheckCircle2 className="w-4 h-4" /> Allowed
+                              </span>
+                            ) : b.status === 'BLOCKED' ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#FEF2F2] dark:bg-[#7F1D1D] text-[#991B1B] dark:text-[#FCA5A5] border border-[#FECACA] dark:border-[#7F1D1D] text-xs font-bold uppercase tracking-wider rounded">
+                                <XCircle className="w-4 h-4" /> Blocked
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-1 bg-[#F3F4F6] dark:bg-[#1E293B] text-[#6B7280] dark:text-[#94A3B8] border border-[#E5E7EB] dark:border-[#334155] text-xs font-bold uppercase tracking-wider rounded">
+                                <AlertTriangle className="w-4 h-4" /> Error
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] mb-2">robots.txt Check</h4>
+                    <div className="border border-[#E5E7EB] dark:border-[#334155] rounded overflow-hidden divide-y divide-[#E5E7EB] dark:divide-[#334155] max-h-72 overflow-y-auto">
                       {crawlData.botStatus?.map((b: any, idx: number) => (
                         <div key={idx} className="flex items-center justify-between p-3 bg-white dark:bg-[#0F172A]">
                           <div>

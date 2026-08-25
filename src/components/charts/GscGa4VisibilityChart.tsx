@@ -1,4 +1,14 @@
 import { useState, useEffect } from 'react';
+import {
+  ResponsiveContainer,
+  ComposedChart,
+  Bar,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+} from 'recharts';
 import { TrendingUp, Globe, Search, RefreshCw, BarChart2 } from 'lucide-react';
 
 interface GscSeriesItem {
@@ -32,6 +42,7 @@ export function GscGa4VisibilityChart({
     series: GscSeriesItem[];
     totalClicks: number;
     totalImpressions: number;
+    error?: string;
   } | null>(null);
 
   const [ga4Data, setGa4Data] = useState<{
@@ -40,17 +51,25 @@ export function GscGa4VisibilityChart({
     totalSessions: number;
     totalUsers: number;
     totalConversions: number;
+    error?: string;
   } | null>(null);
 
   const [loading, setLoading] = useState(true);
   const [metricView, setMetricView] = useState<'clicks' | 'sessions' | 'impressions'>('clicks');
 
-  const fetchData = async () => {
+  const fetchData = async (fresh = false) => {
     setLoading(true);
     try {
+      // No explicit siteUrl — the server falls back to googleTokens.selectedGscSite,
+      // the property actually picked in Settings (often "sc-domain:X", not
+      // "https://X"; guessing the URL-prefix form here made lookups fail silently
+      // and always fall back to the disconnected/"CALIBRATED DATA" state).
+      // Responses are cached server-side for 15min — pass fresh=1 to bypass that
+      // (the refresh button below does).
+      const suffix = fresh ? '?fresh=1' : '';
       const [gscRes, ga4Res] = await Promise.all([
-        fetch(`/api/integrations/gsc/data?siteUrl=${encodeURIComponent('https://' + clientDomain)}`),
-        fetch(`/api/integrations/ga4/data`),
+        fetch(`/api/integrations/gsc/data${suffix}`),
+        fetch(`/api/integrations/ga4/data${suffix}`),
       ]);
       const gsc = await gscRes.json();
       const ga4 = await ga4Res.json();
@@ -77,7 +96,6 @@ export function GscGa4VisibilityChart({
   }
 
   const series = gscData?.series || [];
-  const maxMetricVal = Math.max(...series.map((s) => (metricView === 'clicks' ? s.clicks : s.impressions)), 1);
 
   return (
     <div className="bg-white border border-[#E5E7EB] p-5 shadow-xs space-y-4">
@@ -121,7 +139,7 @@ export function GscGa4VisibilityChart({
             Impressions
           </button>
           <button
-            onClick={fetchData}
+            onClick={() => fetchData(true)}
             title="Refresh GSC & GA4 data"
             className="p-1 bg-[#F3F4F6] hover:bg-[#E5E7EB] text-[#374151] rounded transition-colors"
           >
@@ -129,6 +147,13 @@ export function GscGa4VisibilityChart({
           </button>
         </div>
       </div>
+
+      {(gscData?.error || ga4Data?.error) && (
+        <div className="text-xs text-[#DC2626] bg-[#FEF2F2] p-3 border border-[#FECACA] space-y-0.5">
+          {gscData?.error && <div>GSC: {gscData.error}</div>}
+          {ga4Data?.error && <div>GA4: {ga4Data.error}</div>}
+        </div>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -181,40 +206,55 @@ export function GscGa4VisibilityChart({
         </div>
       </div>
 
-      {/* Comparative Bar Chart Visualization */}
+      {/* GSC Trend Chart: metric bars + avg position line */}
       <div className="space-y-2 pt-2">
         <div className="flex items-center justify-between text-xs text-[#6B7280] px-1 font-bold uppercase tracking-wider text-[10px]">
-          <span>Date</span>
-          <span>{metricView === 'clicks' ? 'GSC Organic Clicks' : 'GSC Impressions'}</span>
+          <span>{metricView === 'clicks' ? 'GSC Organic Clicks' : 'GSC Impressions'} (bars, left axis)</span>
+          <span>Avg Position (line, right axis — lower is better)</span>
         </div>
 
-        <div className="space-y-2">
-          {series.map((item) => {
-            const val = metricView === 'clicks' ? item.clicks : item.impressions;
-            const pct = Math.round((val / maxMetricVal) * 100);
-
-            return (
-              <div key={item.date} className="p-2 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xs space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-mono text-[11px] font-bold text-[#374151]">{item.date}</span>
-                  <div className="flex items-center gap-3 font-mono text-[11px]">
-                    <span className="font-bold text-[#111827]">
-                      {val.toLocaleString()} {metricView}
-                    </span>
-                    <span className="text-[#6B7280]">CTR: {(item.ctr * 100).toFixed(1)}%</span>
-                    <span className="text-[#6B7280]">Pos: {item.position}</span>
-                  </div>
-                </div>
-                <div className="w-full bg-[#E5E7EB] h-2 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-[#2563EB] transition-all duration-300"
-                    style={{ width: `${pct}%` }}
-                  />
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        {series.length === 0 ? (
+          <div className="text-center text-xs text-[#6B7280] py-8">No Search Console data for this date range yet.</div>
+        ) : (
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <ComposedChart data={series} margin={{ top: 10, right: 10, bottom: 0, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#E5E7EB" />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 10, fill: '#6B7280' }}
+                  tickFormatter={(d: string) => new Date(d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                />
+                <YAxis yAxisId="left" tick={{ fontSize: 11, fill: '#6B7280' }} allowDecimals={false} />
+                <YAxis yAxisId="right" orientation="right" reversed tick={{ fontSize: 11, fill: '#6B7280' }} />
+                <Tooltip
+                  contentStyle={{ fontSize: 12, borderRadius: 4 }}
+                  labelFormatter={(d: string) => new Date(d).toLocaleDateString()}
+                  formatter={(value: any, name: string) => {
+                    if (name === 'CTR') return [`${(value * 100).toFixed(1)}%`, name];
+                    return [value, name];
+                  }}
+                />
+                <Bar
+                  yAxisId="left"
+                  dataKey={metricView}
+                  name={metricView === 'clicks' ? 'Clicks' : 'Impressions'}
+                  fill="#2563EB"
+                  radius={[2, 2, 0, 0]}
+                />
+                <Line
+                  yAxisId="right"
+                  type="monotone"
+                  dataKey="position"
+                  name="Avg Position"
+                  stroke="#7C3AED"
+                  strokeWidth={2}
+                  dot={false}
+                />
+              </ComposedChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </div>
 
       {/* GA4 AI Traffic Sources Table */}

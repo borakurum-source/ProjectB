@@ -251,6 +251,7 @@ export interface GoogleIntegrationState {
   availableGscSites?: Array<{ siteUrl: string; permissionLevel: string }>;
   availableGa4Properties?: Array<{ propertyId: string; displayName: string }>;
   lastSyncAt?: string;
+  error?: string;
 }
 
 export interface GscPerformanceData {

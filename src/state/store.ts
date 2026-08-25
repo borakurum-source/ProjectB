@@ -75,19 +75,10 @@ export class AppStore {
   }
 
   async initializeWithDefaults(): Promise<AppStoreData> {
-    const clients = await this.adapter.list<Client>('clients');
-    const prompts = await this.adapter.list<Prompt>('prompts');
-
-    const hasOldMock = clients.some(
-      (c) => c.id === 'client-demo-acme' || c.domain.includes('acmeanalytics')
-    );
-    const hasOldPrompts = prompts.length < DEMO_PROMPTS.length || !prompts.some((p) => p.text.includes('Evde doğum günü'));
-
-    if (clients.length === 0 || hasOldMock || hasOldPrompts) {
-      // Seed default calibrated snacksforparty data with all 14 prompts
-      await this.resetToDemo();
-    }
-
+    // No auto-seeded demo data: a fresh workspace starts empty and the app should
+    // route the user into onboarding to create a real, live-measured client. Demo
+    // data is opt-in only, via the explicit "Reset Calibrated Demo Workspace" action
+    // in Settings — never silently injected on load. See spec §5: NO FAKE DATA, EVER.
     return this.loadAll();
   }
 
@@ -111,7 +102,7 @@ export class AppStore {
     };
 
     return {
-      clients: clients.length > 0 ? clients : [DEMO_CLIENT],
+      clients,
       prompts,
       runCycles,
       runs,

@@ -188,6 +188,26 @@ export const DEMO_PROMPTS: Prompt[] = [
     active: true,
     createdAt: '2026-08-24T09:13:00Z',
   },
+  {
+    id: 'prompt-15',
+    ownerId: 'user-snacksforparty',
+    clientId: 'client-snacksforparty',
+    text: 'Evde doğum günü yapacağım. Catering nereden alabilirim?',
+    intentLayer: 'Commercial',
+    category: 'Ev Daveti Catering',
+    active: true,
+    createdAt: '2026-08-25T13:45:00Z',
+  },
+  {
+    id: 'prompt-16',
+    ownerId: 'user-snacksforparty',
+    clientId: 'client-snacksforparty',
+    text: 'Evde doğum günü yapacağım. Atıştırmalık nereden alabilirim?',
+    intentLayer: 'Commercial',
+    category: 'Ev Daveti Atıştırmalık',
+    active: true,
+    createdAt: '2026-08-25T13:46:00Z',
+  },
 ];
 
 export const DEMO_RUN_CYCLES: RunCycle[] = [
