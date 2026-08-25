@@ -32,12 +32,66 @@ import { RunInspectorModal } from './components/RunInspectorModal';
 import { DiagnosticModal } from './components/DiagnosticModal';
 import { OpportunityModal } from './components/OpportunityModal';
 import { ReportModal } from './components/ReportModal';
+import { OnboardingModal } from './components/OnboardingModal';
 import { FileText, Play } from 'lucide-react';
 
 export default function App() {
-  // Client Management State
-  const [clients, setClients] = useState<Client[]>([demoClient]);
-  const [activeClientId, setActiveClientId] = useState<string>(demoClient.id);
+  // Dark Mode State with localStorage & media query fallback
+  const [darkMode, setDarkMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('rag_signal_theme');
+      if (saved) return saved === 'dark';
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('rag_signal_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('rag_signal_theme', 'light');
+    }
+  }, [darkMode]);
+
+  const toggleDarkMode = () => setDarkMode((prev) => !prev);
+
+  // Client Management State with localStorage persistence
+  const [clients, setClients] = useState<Client[]>(() => {
+    try {
+      const saved = localStorage.getItem('rag_signal_clients');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((c: Client) => {
+            if (c.id === demoClient.id || c.domain === demoClient.domain) {
+              return {
+                ...c,
+                competitorDomains: demoClient.competitorDomains,
+                competitorBrands: demoClient.competitorBrands,
+                categorizedCompetitors: demoClient.categorizedCompetitors,
+              };
+            }
+            return c;
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to parse saved clients:', e);
+    }
+    return [demoClient];
+  });
+
+  const [activeClientId, setActiveClientId] = useState<string>(() => {
+    try {
+      const savedId = localStorage.getItem('rag_signal_active_client_id');
+      if (savedId) return savedId;
+    } catch {}
+    return demoClient.id;
+  });
 
   // Active client object
   const activeClient = useMemo(() => {
@@ -49,12 +103,128 @@ export default function App() {
     'Overview' | 'Prompts' | 'Competitors' | 'Pages' | 'Actions' | 'Settings'
   >('Overview');
 
-  // Prompts, Runs, Cycles, Actions, Diagnostics State
-  const [prompts, setPrompts] = useState<Prompt[]>(demoPrompts);
-  const [runs, setRuns] = useState<Run[]>(demoRuns);
-  const [cycleAggregates, setCycleAggregates] = useState<CycleAggregate[]>(demoCycleAggregates);
-  const [actions, setActions] = useState<ActionItem[]>(demoActions);
-  const [pageAnalyses, setPageAnalyses] = useState<PageAnalysis[]>(demoPageAnalyses);
+  // Prompts, Runs, Cycles, Actions, Diagnostics State with localStorage persistence
+  const [prompts, setPrompts] = useState<Prompt[]>(() => {
+    try {
+      const saved = localStorage.getItem('rag_signal_prompts');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to parse saved prompts:', e);
+    }
+    return demoPrompts;
+  });
+
+  const [runs, setRuns] = useState<Run[]>(() => {
+    try {
+      const saved = localStorage.getItem('rag_signal_runs');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to parse saved runs:', e);
+    }
+    return demoRuns;
+  });
+
+  const [cycleAggregates, setCycleAggregates] = useState<CycleAggregate[]>(() => {
+    try {
+      const saved = localStorage.getItem('rag_signal_cycles');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to parse saved cycles:', e);
+    }
+    return demoCycleAggregates;
+  });
+
+  const [actions, setActions] = useState<ActionItem[]>(() => {
+    try {
+      const saved = localStorage.getItem('rag_signal_actions');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to parse saved actions:', e);
+    }
+    return demoActions;
+  });
+
+  const [pageAnalyses, setPageAnalyses] = useState<PageAnalysis[]>(() => {
+    try {
+      const saved = localStorage.getItem('rag_signal_page_analyses');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to parse saved pageAnalyses:', e);
+    }
+    return demoPageAnalyses;
+  });
+
+  // Automatically persist changes to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('rag_signal_clients', JSON.stringify(clients));
+    } catch (e) {
+      console.error('Failed to save clients to localStorage:', e);
+    }
+  }, [clients]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('rag_signal_active_client_id', activeClientId);
+    } catch (e) {
+      console.error('Failed to save activeClientId to localStorage:', e);
+    }
+  }, [activeClientId]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('rag_signal_prompts', JSON.stringify(prompts));
+    } catch (e) {
+      console.error('Failed to save prompts to localStorage:', e);
+    }
+  }, [prompts]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('rag_signal_runs', JSON.stringify(runs));
+    } catch (e) {
+      console.error('Failed to save runs to localStorage:', e);
+    }
+  }, [runs]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('rag_signal_cycles', JSON.stringify(cycleAggregates));
+    } catch (e) {
+      console.error('Failed to save cycles to localStorage:', e);
+    }
+  }, [cycleAggregates]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('rag_signal_actions', JSON.stringify(actions));
+    } catch (e) {
+      console.error('Failed to save actions to localStorage:', e);
+    }
+  }, [actions]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('rag_signal_page_analyses', JSON.stringify(pageAnalyses));
+    } catch (e) {
+      console.error('Failed to save pageAnalyses to localStorage:', e);
+    }
+  }, [pageAnalyses]);
   const [diagnostics, setDiagnostics] = useState<Record<string, Diagnostic>>(() => {
     const map: Record<string, Diagnostic> = {};
     demoDiagnostics.forEach((d) => {
@@ -67,6 +237,7 @@ export default function App() {
   const [showRunModal, setShowRunModal] = useState(false);
   const [showOpportunityModal, setShowOpportunityModal] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [isExecutingCycle, setIsExecutingCycle] = useState(false);
   const [runProgressStatus, setRunProgressStatus] = useState('');
   const [inspectingPromptId, setInspectingPromptId] = useState<string | null>(null);
@@ -325,30 +496,57 @@ export default function App() {
     setPrompts((prev) => prev.filter((p) => p.id !== promptId));
   };
 
-  // Add new client brand
+  // Update prompt fields (for inline title editing)
+  const handleUpdatePrompt = (promptId: string, updatedFields: Partial<Prompt>) => {
+    setPrompts((prev) =>
+      prev.map((p) => (p.id === promptId ? { ...p, ...updatedFields } : p))
+    );
+  };
+
+  // Add new client brand via Onboarding Modal
   const handleNewClient = () => {
-    const brand = prompt('Enter New Client Brand Name:');
-    if (!brand || !brand.trim()) return;
-    const domain = prompt('Enter Client Primary Domain (e.g. yourbrand.com):') || `${brand.toLowerCase().replace(/\s+/g, '')}.com`;
+    setShowOnboardingModal(true);
+  };
 
-    const newClient: Client = {
-      id: `client-${Date.now()}`,
-      ownerId: 'user-default',
-      brandName: brand.trim(),
-      domain: domain.trim().replace(/^https?:\/\//, ''),
-      aliases: [brand.trim()],
-      competitorBrands: ['Datadog', 'Dynatrace', 'New Relic'],
-      competitorDomains: ['datadoghq.com', 'dynatrace.com', 'newrelic.com'],
-      industry: 'B2B SaaS',
-      market: 'Global',
-      language: 'English',
-      defaultRunsPerPrompt: 3,
-      createdAt: new Date().toISOString(),
-      isDemo: false,
-    };
-
+  const handleCompleteOnboarding = async (newClient: Client, autoGeneratePrompts: boolean) => {
     setClients((prev) => [...prev, newClient]);
     setActiveClientId(newClient.id);
+    setShowOnboardingModal(false);
+
+    // If requested, auto-discover initial seed prompts for this brand & market
+    if (autoGeneratePrompts) {
+      try {
+        const res = await fetch('/api/prompts/discover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            clientBrand: newClient.brandName,
+            domain: newClient.domain,
+            industry: newClient.industry,
+            market: newClient.market,
+            language: newClient.language,
+          }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data.prompts) && data.prompts.length > 0) {
+            const seedPrompts: Prompt[] = data.prompts.map((p: any, idx: number) => ({
+              id: `p-discovered-${Date.now()}-${idx}`,
+              ownerId: 'default-owner',
+              clientId: newClient.id,
+              text: p.text,
+              category: p.category || 'General',
+              intentLayer: p.intentLayer || 'Commercial / Product Evaluation',
+              active: true,
+              createdAt: new Date().toISOString(),
+            }));
+            setPrompts((prev) => [...seedPrompts, ...prev]);
+          }
+        }
+      } catch (err) {
+        console.warn('Failed to auto-discover seed prompts during onboarding:', err);
+      }
+    }
   };
 
   // Update client
@@ -361,6 +559,14 @@ export default function App() {
   // Reset Demo Data
   const handleResetDemoData = () => {
     if (confirm('Reset workspace to calibrated demo benchmark data?')) {
+      localStorage.removeItem('rag_signal_clients');
+      localStorage.removeItem('rag_signal_active_client_id');
+      localStorage.removeItem('rag_signal_prompts');
+      localStorage.removeItem('rag_signal_runs');
+      localStorage.removeItem('rag_signal_cycles');
+      localStorage.removeItem('rag_signal_actions');
+      localStorage.removeItem('rag_signal_page_analyses');
+
       setClients([demoClient]);
       setActiveClientId(demoClient.id);
       setPrompts(demoPrompts);
@@ -368,6 +574,30 @@ export default function App() {
       setCycleAggregates(demoCycleAggregates);
       setActions(demoActions);
       setPageAnalyses(demoPageAnalyses);
+    }
+  };
+
+  // Clear Mockup Data & Setup Real Client Workspace
+  const handleClearDemoDataAndStartReal = () => {
+    if (confirm('Clear all demo benchmark data and set up a real client brand workspace?')) {
+      localStorage.removeItem('rag_signal_clients');
+      localStorage.removeItem('rag_signal_active_client_id');
+      localStorage.removeItem('rag_signal_prompts');
+      localStorage.removeItem('rag_signal_runs');
+      localStorage.removeItem('rag_signal_cycles');
+      localStorage.removeItem('rag_signal_actions');
+      localStorage.removeItem('rag_signal_page_analyses');
+
+      setClients([]);
+      setActiveClientId('');
+      setPrompts([]);
+      setRuns([]);
+      setCycleAggregates([]);
+      setActions([]);
+      setPageAnalyses([]);
+      setDiagnostics({});
+
+      setShowOnboardingModal(true);
     }
   };
 
@@ -393,7 +623,7 @@ export default function App() {
   const inspectingPrompt = prompts.find((p) => p.id === inspectingPromptId);
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-[#F8F9FA] text-[#1A1A1A] font-sans antialiased">
+    <div className="min-h-screen flex flex-col md:flex-row bg-[#F8F9FA] dark:bg-[#090D16] text-[#1A1A1A] dark:text-[#F1F5F9] font-sans antialiased transition-colors">
       {/* Navigation Sidebar & Mobile Header */}
       <Navbar
         clients={clients}
@@ -404,38 +634,40 @@ export default function App() {
         onSelectTab={setActiveTab}
         onOpenRunModal={() => setShowRunModal(true)}
         activeEngine={activeEngine}
+        darkMode={darkMode}
+        onToggleDarkMode={toggleDarkMode}
       />
 
       {/* Main Workspace Area with Sleek Header */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Sleek Top Header matching design */}
-        <header className="h-14 sm:h-16 border-b border-[#E5E7EB] bg-white px-3.5 sm:px-8 flex items-center justify-between shrink-0 sticky top-0 z-20">
+        <header className="h-14 sm:h-16 border-b border-[#E5E7EB] dark:border-[#1E293B] bg-white dark:bg-[#0F172A] px-3.5 sm:px-8 flex items-center justify-between shrink-0 sticky top-0 z-20 transition-colors">
           <div className="flex items-center space-x-2 sm:space-x-4 min-w-0">
-            <div className="text-xs sm:text-sm text-[#9CA3AF] truncate">
-              Client / <span className="text-[#111827] font-medium">{activeClient.brandName}</span>
+            <div className="text-xs sm:text-sm text-[#9CA3AF] dark:text-[#64748B] truncate">
+              Client / <span className="text-[#111827] dark:text-[#F8FAFC] font-medium">{activeClient.brandName}</span>
             </div>
             {activeClient.isDemo && (
-              <span className="bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A] text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">
+              <span className="bg-[#FEF3C7] dark:bg-[#78350F] text-[#D97706] dark:text-[#FDE68A] border border-[#FDE68A] dark:border-[#B45309] text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0">
                 DEMO DATA
               </span>
             )}
-            <div className="bg-[#E5E7EB] h-4 w-[1px] mx-1 sm:mx-2 hidden sm:block" />
-            <div className="text-xs font-mono bg-[#F3F4F6] px-2 py-1 border border-[#D1D5DB] text-[#4B5563] hidden sm:block shrink-0">
+            <div className="bg-[#E5E7EB] dark:bg-[#334155] h-4 w-[1px] mx-1 sm:mx-2 hidden sm:block" />
+            <div className="text-xs font-mono bg-[#F3F4F6] dark:bg-[#1E293B] px-2 py-1 border border-[#D1D5DB] dark:border-[#334155] text-[#4B5563] dark:text-[#94A3B8] hidden sm:block shrink-0 rounded">
               n={activeClient.defaultRunsPerPrompt || 3} runs/prompt
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
             <button
               onClick={() => setShowReportModal(true)}
-              className="bg-white hover:bg-[#F3F4F6] border border-[#D1D5DB] text-[#111827] text-xs font-bold uppercase tracking-wider px-2.5 sm:px-4 py-1.5 sm:py-2 rounded shadow-xs transition-colors flex items-center gap-1.5 min-h-[36px]"
+              className="bg-white dark:bg-[#1E293B] hover:bg-[#F3F4F6] dark:hover:bg-[#334155] border border-[#D1D5DB] dark:border-[#334155] text-[#111827] dark:text-[#F8FAFC] text-xs font-bold uppercase tracking-wider px-2.5 sm:px-4 py-1.5 sm:py-2 rounded shadow-xs transition-colors flex items-center gap-1.5 min-h-[36px]"
             >
-              <FileText className="w-3.5 h-3.5" />
+              <FileText className="w-3.5 h-3.5 text-[#4338CA] dark:text-[#818CF8]" />
               <span className="hidden sm:inline">Briefing Report</span>
               <span className="sm:hidden text-[11px]">Report</span>
             </button>
             <button
               onClick={() => setShowRunModal(true)}
-              className="bg-[#111827] hover:bg-[#1f2937] text-white text-xs font-bold uppercase tracking-widest px-3 sm:px-6 py-1.5 sm:py-2 rounded shadow-xs transition-colors flex items-center gap-1.5 min-h-[36px]"
+              className="bg-[#111827] dark:bg-[#4338CA] hover:bg-[#1f2937] dark:hover:bg-[#3730A3] text-white text-xs font-bold uppercase tracking-widest px-3 sm:px-6 py-1.5 sm:py-2 rounded shadow-xs transition-colors flex items-center gap-1.5 min-h-[36px]"
             >
               <Play className="w-3 h-3 fill-current sm:hidden" />
               <span className="hidden sm:inline">Execute Run Cycle</span>
@@ -457,6 +689,7 @@ export default function App() {
               onInspectPrompt={(id) => setInspectingPromptId(id)}
               onOpenRunModal={() => setShowRunModal(true)}
               onNavigateTab={setActiveTab}
+              onClearDemoData={handleClearDemoDataAndStartReal}
             />
           )}
 
@@ -469,6 +702,7 @@ export default function App() {
               onBulkAddPrompts={handleBulkAddPrompts}
               onToggleActive={handleTogglePromptActive}
               onDeletePrompt={handleDeletePrompt}
+              onUpdatePrompt={handleUpdatePrompt}
               onInspectPrompt={(id) => setInspectingPromptId(id)}
               onDiagnosePrompt={handleDiagnosePrompt}
               onOpenOpportunities={() => setShowOpportunityModal(true)}
@@ -481,6 +715,7 @@ export default function App() {
               promptAggregates={promptAggregates}
               latestCycle={latestCycle}
               prompts={clientPrompts}
+              runs={clientRuns}
               onDiagnosePrompt={handleDiagnosePrompt}
               onInspectPrompt={(id) => setInspectingPromptId(id)}
             />
@@ -544,6 +779,7 @@ export default function App() {
               client={activeClient}
               onUpdateClient={handleUpdateClient}
               onResetDemoData={handleResetDemoData}
+              onClearDemoData={handleClearDemoDataAndStartReal}
               exportDataJson={handleExportJson}
             />
           )}
@@ -618,6 +854,13 @@ export default function App() {
           onClose={() => setShowReportModal(false)}
         />
       )}
+
+      {/* New Client Onboarding & Website Analysis Modal */}
+      <OnboardingModal
+        isOpen={showOnboardingModal}
+        onClose={() => setShowOnboardingModal(false)}
+        onComplete={handleCompleteOnboarding}
+      />
     </div>
   );
 }

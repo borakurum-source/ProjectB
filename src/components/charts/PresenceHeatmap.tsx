@@ -30,38 +30,38 @@ export function PresenceHeatmap({
 
   // Helper to get background color based on rate (0 to 1)
   const getCellColor = (rate: number, isClient: boolean) => {
-    if (rate === 0) return 'bg-[#F9FAFB] text-[#9CA3AF] border border-[#E5E7EB]';
+    if (rate === 0) return 'bg-[#F9FAFB] dark:bg-[#1E293B]/40 text-[#9CA3AF] dark:text-[#64748B] border border-[#E5E7EB] dark:border-[#334155]';
     if (isClient) {
-      if (rate >= 0.8) return 'bg-[#111827] text-white font-medium border border-[#111827]';
-      if (rate >= 0.5) return 'bg-[#374151] text-white font-medium border border-[#374151]';
-      return 'bg-[#E5E7EB] text-[#111827] border border-[#D1D5DB]';
+      if (rate >= 0.8) return 'bg-[#111827] dark:bg-[#6366F1] text-white font-medium border border-[#111827] dark:border-[#6366F1]';
+      if (rate >= 0.5) return 'bg-[#374151] dark:bg-[#4338CA] text-white font-medium border border-[#374151] dark:border-[#4338CA]';
+      return 'bg-[#E5E7EB] dark:bg-[#1E293B] text-[#111827] dark:text-[#F8FAFC] border border-[#D1D5DB] dark:border-[#334155]';
     }
     // Competitor shades (cool slate tones)
-    if (rate >= 0.8) return 'bg-[#4B5563] text-white font-medium border border-[#4B5563]';
-    if (rate >= 0.5) return 'bg-[#9CA3AF] text-white font-medium border border-[#9CA3AF]';
-    return 'bg-[#F3F4F6] text-[#4B5563] border border-[#E5E7EB]';
+    if (rate >= 0.8) return 'bg-[#4B5563] dark:bg-[#64748B] text-white font-medium border border-[#4B5563] dark:border-[#64748B]';
+    if (rate >= 0.5) return 'bg-[#9CA3AF] dark:bg-[#475569] text-white font-medium border border-[#9CA3AF] dark:border-[#475569]';
+    return 'bg-[#F3F4F6] dark:bg-[#1E293B]/60 text-[#4B5563] dark:text-[#CBD5E1] border border-[#E5E7EB] dark:border-[#334155]';
   };
 
   return (
-    <div className="bg-white border border-[#E5E7EB] p-5 shadow-xs">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-[#F3F4F6]">
+    <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4 pb-3 border-b border-[#F3F4F6] dark:border-[#1E293B]">
         <div>
           <div className="flex items-center gap-2">
-            <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827]">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827] dark:text-[#F8FAFC]">
               Prompt × Brand Presence Heatmap
             </h3>
-            <span className="text-[10px] bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0] px-2 py-0.5 font-bold uppercase tracking-wider">
+            <span className="text-[10px] bg-[#ECFDF5] dark:bg-[#064E3B] text-[#065F46] dark:text-[#A7F3D0] border border-[#A7F3D0] dark:border-[#065F46] px-2 py-0.5 font-bold uppercase tracking-wider">
               Flagship View
             </span>
           </div>
-          <p className="text-xs text-[#6B7280] mt-0.5">
+          <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5">
             Cell value = mentionRate shaded from 0.0 to 1.0 with sample size (n). Click any prompt to inspect raw model responses.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button
             onClick={() => setShowTable(!showTable)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#111827] bg-white hover:bg-[#F3F4F6] border border-[#D1D5DB] rounded shadow-xs transition-colors"
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC] bg-white dark:bg-[#1E293B] hover:bg-[#F3F4F6] dark:hover:bg-[#334155] border border-[#D1D5DB] dark:border-[#334155] rounded shadow-xs transition-colors"
           >
             {showTable ? <Grid className="w-3.5 h-3.5" /> : <Table className="w-3.5 h-3.5" />}
             {showTable ? 'Heatmap View' : 'Table View'}
@@ -70,27 +70,27 @@ export function PresenceHeatmap({
       </div>
 
       {/* Heatmap Legend */}
-      <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs mb-3 pb-3 border-b border-[#F3F4F6]">
-        <span className="text-[#6B7280] font-bold text-[10px] uppercase tracking-wider">Rate Scale:</span>
+      <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs mb-3 pb-3 border-b border-[#F3F4F6] dark:border-[#1E293B]">
+        <span className="text-[#6B7280] dark:text-[#94A3B8] font-bold text-[10px] uppercase tracking-wider">Rate Scale:</span>
         <div className="flex items-center gap-1.5">
-          <span className="w-3.5 h-3.5 bg-[#F9FAFB] border border-[#E5E7EB] inline-block" />
-          <span className="text-[#4B5563] text-xs">0%</span>
+          <span className="w-3.5 h-3.5 bg-[#F9FAFB] dark:bg-[#1E293B]/40 border border-[#E5E7EB] dark:border-[#334155] inline-block" />
+          <span className="text-[#4B5563] dark:text-[#CBD5E1] text-xs">0%</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-3.5 h-3.5 bg-[#E5E7EB] border border-[#D1D5DB] inline-block" />
-          <span className="text-[#4B5563] text-xs">1–49%</span>
+          <span className="w-3.5 h-3.5 bg-[#E5E7EB] dark:bg-[#1E293B] border border-[#D1D5DB] dark:border-[#334155] inline-block" />
+          <span className="text-[#4B5563] dark:text-[#CBD5E1] text-xs">1–49%</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-3.5 h-3.5 bg-[#374151] inline-block" />
-          <span className="text-[#4B5563] text-xs">50–79%</span>
+          <span className="w-3.5 h-3.5 bg-[#374151] dark:bg-[#4338CA] inline-block" />
+          <span className="text-[#4B5563] dark:text-[#CBD5E1] text-xs">50–79%</span>
         </div>
         <div className="flex items-center gap-1.5">
-          <span className="w-3.5 h-3.5 bg-[#111827] inline-block" />
-          <span className="text-[#111827] text-xs font-semibold">80–100%</span>
+          <span className="w-3.5 h-3.5 bg-[#111827] dark:bg-[#6366F1] inline-block" />
+          <span className="text-[#111827] dark:text-[#F8FAFC] text-xs font-semibold">80–100%</span>
         </div>
         <div className="flex items-center gap-1.5 ml-auto">
-          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] text-[10px] font-bold uppercase tracking-wider">
-            <AlertCircle className="w-3 h-3 text-[#D97706]" /> Volatile
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-[#FEF3C7] dark:bg-[#78350F] text-[#92400E] dark:text-[#FDE68A] border border-[#FDE68A] dark:border-[#B45309] text-[10px] font-bold uppercase tracking-wider">
+            <AlertCircle className="w-3 h-3 text-[#D97706] dark:text-[#FBBF24]" /> Volatile
           </span>
         </div>
       </div>

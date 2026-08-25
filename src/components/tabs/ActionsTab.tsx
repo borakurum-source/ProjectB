@@ -68,13 +68,13 @@ export function ActionsTab({
   return (
     <div className="space-y-6">
       {/* Top Banner & Filter Controls */}
-      <div className="bg-white border border-[#E5E7EB] p-5 shadow-xs">
+      <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827]">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827] dark:text-[#F8FAFC]">
               Implementable Action Items & Retest Verification
             </h3>
-            <p className="text-xs text-[#6B7280] mt-0.5">
+            <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5">
               Strict loop: Diagnose gap → Implement concrete changes → Retest identical prompts → Verify Before/After diff.
             </p>
           </div>
@@ -82,7 +82,7 @@ export function ActionsTab({
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-1.5 bg-[#F9FAFB] border border-[#E5E7EB] rounded text-xs font-semibold uppercase tracking-wider text-[#374151]"
+              className="px-3 py-1.5 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs font-semibold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1]"
             >
               <option value="ALL">All Statuses ({actions.length})</option>
               <option value="Todo">Todo ({actions.filter((a) => a.status === 'Todo').length})</option>
@@ -93,7 +93,7 @@ export function ActionsTab({
 
             <button
               onClick={() => setShowCreateModal(true)}
-              className="px-3.5 py-1.5 bg-[#111827] hover:bg-black text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs transition-colors inline-flex items-center gap-1.5"
+              className="px-3.5 py-1.5 bg-[#111827] dark:bg-[#4338CA] hover:bg-black dark:hover:bg-[#3730A3] text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs transition-colors inline-flex items-center gap-1.5"
             >
               <Plus className="w-3.5 h-3.5" /> New Action
             </button>
@@ -104,7 +104,7 @@ export function ActionsTab({
       {/* Actions List */}
       <div className="space-y-4">
         {filteredActions.length === 0 ? (
-          <div className="bg-white border border-[#E5E7EB] p-12 text-center text-[#6B7280] text-xs">
+          <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-12 text-center text-[#6B7280] dark:text-[#94A3B8] text-xs">
             No actions match the selected filter.
           </div>
         ) : (
@@ -115,22 +115,22 @@ export function ActionsTab({
             return (
               <div
                 key={action.id}
-                className="bg-white border border-[#E5E7EB] p-5 shadow-xs space-y-4"
+                className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs space-y-4"
               >
                 {/* Action Header */}
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F3F4F6] pb-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F3F4F6] dark:border-[#1E293B] pb-3">
                   <div className="space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       {/* Status Badge */}
                       <span
                         className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 border ${
                           action.status === 'Retested'
-                            ? 'bg-[#ECFDF5] text-[#065F46] border-[#A7F3D0]'
+                            ? 'bg-[#ECFDF5] dark:bg-[#064E3B] text-[#065F46] dark:text-[#A7F3D0] border-[#A7F3D0] dark:border-[#065F46]'
                             : action.status === 'Implemented'
-                            ? 'bg-[#111827] text-white border-[#111827]'
+                            ? 'bg-[#111827] dark:bg-[#312E81] text-white border-[#111827] dark:border-[#4338CA]'
                             : action.status === 'In Progress'
-                            ? 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]'
-                            : 'bg-[#F3F4F6] text-[#374151] border-[#E5E7EB]'
+                            ? 'bg-[#FEF3C7] dark:bg-[#78350F] text-[#D97706] dark:text-[#FDE68A] border-[#FDE68A] dark:border-[#B45309]'
+                            : 'bg-[#F3F4F6] dark:bg-[#1E293B] text-[#374151] dark:text-[#CBD5E1] border-[#E5E7EB] dark:border-[#334155]'
                         }`}
                       >
                         {action.status}
@@ -140,22 +140,22 @@ export function ActionsTab({
                       <span
                         className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 border ${
                           action.priority === 'Critical'
-                            ? 'bg-[#FEF2F2] text-[#DC2626] border-[#FECACA]'
+                            ? 'bg-[#FEF2F2] dark:bg-[#7F1D1D] text-[#DC2626] dark:text-[#FCA5A5] border-[#FECACA] dark:border-[#991B1B]'
                             : action.priority === 'High'
-                            ? 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]'
-                            : 'bg-[#F3F4F6] text-[#374151] border-[#E5E7EB]'
+                            ? 'bg-[#FEF3C7] dark:bg-[#78350F] text-[#D97706] dark:text-[#FDE68A] border-[#FDE68A] dark:border-[#B45309]'
+                            : 'bg-[#F3F4F6] dark:bg-[#1E293B] text-[#374151] dark:text-[#CBD5E1] border-[#E5E7EB] dark:border-[#334155]'
                         }`}
                       >
                         {action.priority} Priority
                       </span>
 
-                      <h3 className="text-sm font-bold text-[#111827]">{action.title}</h3>
+                      <h3 className="text-sm font-bold text-[#111827] dark:text-[#F8FAFC]">{action.title}</h3>
                     </div>
 
-                    <div className="text-xs text-[#6B7280] flex items-center gap-3">
-                      <span>Effort: <strong className="text-[#111827] font-semibold">{action.effort}</strong></span>
+                    <div className="text-xs text-[#6B7280] dark:text-[#94A3B8] flex items-center gap-3">
+                      <span>Effort: <strong className="text-[#111827] dark:text-[#F8FAFC] font-semibold">{action.effort}</strong></span>
                       <span>•</span>
-                      <span>Target Prompts: <strong className="text-[#111827] font-mono font-semibold">{action.promptIds.join(', ') || 'Global'}</strong></span>
+                      <span>Target Prompts: <strong className="text-[#111827] dark:text-[#F8FAFC] font-mono font-semibold">{action.promptIds.join(', ') || 'Global'}</strong></span>
                       {action.pageUrl && (
                         <>
                           <span>•</span>
@@ -170,7 +170,7 @@ export function ActionsTab({
                     <select
                       value={action.status}
                       onChange={(e) => onUpdateActionStatus(action.id, e.target.value as ActionStatus)}
-                      className="text-xs font-bold uppercase tracking-wider px-2.5 py-1.5 border border-[#D1D5DB] bg-[#F9FAFB] text-[#111827] rounded shadow-xs"
+                      className="text-xs font-bold uppercase tracking-wider px-2.5 py-1.5 border border-[#D1D5DB] dark:border-[#334155] bg-[#F9FAFB] dark:bg-[#1E293B] text-[#111827] dark:text-[#F8FAFC] rounded shadow-xs"
                     >
                       <option value="Todo">Mark: Todo</option>
                       <option value="In Progress">Mark: In Progress</option>
@@ -183,7 +183,7 @@ export function ActionsTab({
                       <button
                         onClick={() => onRetestAction(action)}
                         disabled={isRetesting}
-                        className="px-3.5 py-1.5 bg-[#065F46] hover:bg-[#047857] disabled:bg-[#D1D5DB] text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs transition-colors inline-flex items-center gap-1.5"
+                        className="px-3.5 py-1.5 bg-[#065F46] dark:bg-[#059669] hover:bg-[#047857] dark:hover:bg-[#10B981] disabled:bg-[#D1D5DB] dark:disabled:bg-[#334155] text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs transition-colors inline-flex items-center gap-1.5"
                       >
                         {isRetesting ? (
                           <>
@@ -202,24 +202,24 @@ export function ActionsTab({
 
                 {/* Recommendation Details */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                  <div className="p-3.5 bg-[#F9FAFB] border border-[#E5E7EB]">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280] mb-1">
+                  <div className="p-3.5 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155]">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8] mb-1">
                       Observed Gap & Root Cause
                     </div>
-                    <p className="text-[#374151]">{action.why}</p>
+                    <p className="text-[#374151] dark:text-[#CBD5E1]">{action.why}</p>
                     {action.evidence?.observedFact && (
-                      <div className="mt-2 text-[11px] text-[#111827] font-mono bg-white p-2 border border-[#E5E7EB]">
+                      <div className="mt-2 text-[11px] text-[#111827] dark:text-[#F8FAFC] font-mono bg-white dark:bg-[#0F172A] p-2 border border-[#E5E7EB] dark:border-[#334155]">
                         {action.evidence.observedFact}
                       </div>
                     )}
                   </div>
 
-                  <div className="p-3.5 bg-[#F9FAFB] border border-[#E5E7EB]">
-                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#111827] mb-1">
+                  <div className="p-3.5 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155]">
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC] mb-1">
                       Exact Implementation Directive
                     </div>
-                    <p className="text-[#111827] font-semibold">{action.exactRecommendation}</p>
-                    <div className="mt-2 text-[11px] text-[#6B7280]">
+                    <p className="text-[#111827] dark:text-[#F8FAFC] font-semibold">{action.exactRecommendation}</p>
+                    <div className="mt-2 text-[11px] text-[#6B7280] dark:text-[#94A3B8]">
                       <strong>Validation:</strong> {action.validation}
                     </div>
                   </div>
@@ -237,60 +237,60 @@ export function ActionsTab({
 
       {/* Create Action Modal */}
       {showCreateModal && (
-        <div className="fixed inset-0 z-50 bg-[#111827]/70 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white border border-[#E5E7EB] w-full max-w-lg overflow-hidden shadow-2xl">
-            <div className="px-6 py-4 border-b border-[#E5E7EB] bg-[#F9FAFB] flex items-center justify-between">
-              <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827]">Create Action Item</h3>
+        <div className="fixed inset-0 z-50 bg-[#111827]/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] w-full max-w-lg overflow-hidden shadow-2xl rounded-lg">
+            <div className="px-6 py-4 border-b border-[#E5E7EB] dark:border-[#1E293B] bg-[#F9FAFB] dark:bg-[#1E293B] flex items-center justify-between">
+              <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827] dark:text-[#F8FAFC]">Create Action Item</h3>
               <button
                 onClick={() => setShowCreateModal(false)}
-                className="text-[#9CA3AF] hover:text-[#111827]"
+                className="text-[#9CA3AF] hover:text-[#111827] dark:hover:text-[#F8FAFC]"
               >
                 <XCircle className="w-5 h-5" />
               </button>
             </div>
             <form onSubmit={handleCreateSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] mb-1">Action Title</label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] mb-1">Action Title</label>
                 <input
                   type="text"
                   required
                   value={newTitle}
                   onChange={(e) => setNewTitle(e.target.value)}
                   placeholder="e.g. Add Kubernetes Comparison Table with OpenTelemetry support"
-                  className="w-full p-2 bg-[#F9FAFB] border border-[#E5E7EB] rounded text-xs text-[#111827] focus:bg-white focus:border-[#111827] focus:outline-hidden"
+                  className="w-full p-2 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs text-[#111827] dark:text-[#F8FAFC] focus:bg-white dark:focus:bg-[#0F172A] focus:border-[#111827] dark:focus:border-[#6366F1] focus:outline-hidden"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] mb-1">Observed Gap / Why</label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] mb-1">Observed Gap / Why</label>
                 <textarea
                   rows={2}
                   value={newWhy}
                   onChange={(e) => setNewWhy(e.target.value)}
                   placeholder="e.g. Competitors are cited because their landing pages contain clear structured comparison tables."
-                  className="w-full p-2 bg-[#F9FAFB] border border-[#E5E7EB] rounded text-xs text-[#111827] focus:bg-white focus:border-[#111827] focus:outline-hidden"
+                  className="w-full p-2 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs text-[#111827] dark:text-[#F8FAFC] focus:bg-white dark:focus:bg-[#0F172A] focus:border-[#111827] dark:focus:border-[#6366F1] focus:outline-hidden"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] mb-1">Exact Recommendation</label>
+                <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] mb-1">Exact Recommendation</label>
                 <textarea
                   required
                   rows={3}
                   value={newExactRec}
                   onChange={(e) => setNewExactRec(e.target.value)}
                   placeholder="e.g. Implement an HTML <table> on /kubernetes-monitoring comparing Datadog, Dynatrace, and Acme Analytics."
-                  className="w-full p-2 bg-[#F9FAFB] border border-[#E5E7EB] rounded text-xs text-[#111827] focus:bg-white focus:border-[#111827] focus:outline-hidden"
+                  className="w-full p-2 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs text-[#111827] dark:text-[#F8FAFC] focus:bg-white dark:focus:bg-[#0F172A] focus:border-[#111827] dark:focus:border-[#6366F1] focus:outline-hidden"
                 />
               </div>
 
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] mb-1">Target Prompt</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] mb-1">Target Prompt</label>
                   <select
                     value={selectedPromptId}
                     onChange={(e) => setSelectedPromptId(e.target.value)}
-                    className="w-full p-2 bg-[#F9FAFB] border border-[#E5E7EB] rounded text-xs font-semibold text-[#111827]"
+                    className="w-full p-2 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs font-semibold text-[#111827] dark:text-[#F8FAFC]"
                   >
                     {prompts.map((p) => (
                       <option key={p.id} value={p.id}>
@@ -300,11 +300,11 @@ export function ActionsTab({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] mb-1">Priority</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] mb-1">Priority</label>
                   <select
                     value={newPriority}
                     onChange={(e) => setNewPriority(e.target.value as any)}
-                    className="w-full p-2 bg-[#F9FAFB] border border-[#E5E7EB] rounded text-xs font-semibold text-[#111827]"
+                    className="w-full p-2 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs font-semibold text-[#111827] dark:text-[#F8FAFC]"
                   >
                     <option value="Critical">Critical</option>
                     <option value="High">High</option>
@@ -313,11 +313,11 @@ export function ActionsTab({
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] mb-1">Effort</label>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] mb-1">Effort</label>
                   <select
                     value={newEffort}
                     onChange={(e) => setNewEffort(e.target.value as any)}
-                    className="w-full p-2 bg-[#F9FAFB] border border-[#E5E7EB] rounded text-xs font-semibold text-[#111827]"
+                    className="w-full p-2 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs font-semibold text-[#111827] dark:text-[#F8FAFC]"
                   >
                     <option value="Low">Low (&lt; 1 day)</option>
                     <option value="Medium">Medium (1-3 days)</option>
@@ -326,17 +326,17 @@ export function ActionsTab({
                 </div>
               </div>
 
-              <div className="pt-4 border-t border-[#E5E7EB] flex items-center justify-end gap-2">
+              <div className="pt-4 border-t border-[#E5E7EB] dark:border-[#1E293B] flex items-center justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setShowCreateModal(false)}
-                  className="px-3.5 py-1.5 border border-[#D1D5DB] rounded text-xs font-bold uppercase tracking-wider text-[#374151] hover:bg-[#F3F4F6]"
+                  className="px-3.5 py-1.5 border border-[#D1D5DB] dark:border-[#334155] rounded text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] hover:bg-[#F3F4F6] dark:hover:bg-[#334155]"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-1.5 bg-[#111827] hover:bg-black text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs"
+                  className="px-4 py-1.5 bg-[#111827] dark:bg-[#4338CA] hover:bg-black dark:hover:bg-[#3730A3] text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs"
                 >
                   Create Action
                 </button>

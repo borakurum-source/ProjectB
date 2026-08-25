@@ -30,7 +30,7 @@ export class GeminiGroundedEngine implements VisibilityEngine {
 
       return {
         engineId: 'gemini-grounded',
-        model: data.model || 'gemini-2.5-flash',
+        model: data.model || 'gemini-3.6-flash',
         answerText: data.answerText || '',
         groundingSources,
         webSearchQueries: data.webSearchQueries || [],
@@ -39,7 +39,7 @@ export class GeminiGroundedEngine implements VisibilityEngine {
     } catch (err: any) {
       return {
         engineId: 'gemini-grounded',
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         answerText: '',
         groundingSources: [],
         webSearchQueries: [],

@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { Client, PromptAggregate, CycleAggregate, ActionItem, Prompt } from '../../types';
 import { ShareOfVoiceChart } from '../charts/ShareOfVoiceChart';
+import { PerformanceTrendsChart } from '../charts/PerformanceTrendsChart';
 import { PresenceHeatmap } from '../charts/PresenceHeatmap';
 import { CompetitorHeatmap } from '../charts/CompetitorHeatmap';
 import { DomainLeaderboard } from '../charts/DomainLeaderboard';
+import { GscGa4VisibilityChart } from '../charts/GscGa4VisibilityChart';
 import { Radio, AlertCircle, ArrowUpRight, CheckCircle2, ShieldCheck, Play, ArrowRight, Grid, LayoutList } from 'lucide-react';
 
 interface OverviewTabProps {
@@ -16,6 +18,7 @@ interface OverviewTabProps {
   onInspectPrompt: (promptId: string) => void;
   onOpenRunModal: () => void;
   onNavigateTab: (tab: 'Prompts' | 'Competitors' | 'Pages' | 'Actions') => void;
+  onClearDemoData?: () => void;
 }
 
 export function OverviewTab({
@@ -28,6 +31,7 @@ export function OverviewTab({
   onInspectPrompt,
   onOpenRunModal,
   onNavigateTab,
+  onClearDemoData,
 }: OverviewTabProps) {
   const [heatmapMode, setHeatmapMode] = useState<'standard' | 'correlation'>('standard');
 
@@ -50,105 +54,124 @@ export function OverviewTab({
     <div className="space-y-5 sm:space-y-6">
       {/* Demo client alert banner if applicable */}
       {client.isDemo && (
-        <div className="bg-[#FFFBEB] border border-[#FDE68A] p-3.5 sm:px-4 sm:py-3 text-xs text-[#92400E] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-none md:rounded-sm">
+        <div className="bg-[#FFFBEB] dark:bg-[#78350F]/20 border border-[#FDE68A] dark:border-[#B45309] p-3.5 sm:px-4 sm:py-3 text-xs text-[#92400E] dark:text-[#FDE68A] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-none md:rounded-sm">
           <div className="flex items-start sm:items-center gap-2">
-            <span className="bg-[#FEF3C7] text-[#D97706] font-bold px-1.5 py-0.5 rounded-[2px] text-[10px] tracking-wider uppercase border border-[#FDE68A] shrink-0 mt-0.5 sm:mt-0">
+            <span className="bg-[#FEF3C7] dark:bg-[#B45309] text-[#D97706] dark:text-[#FEF3C7] font-bold px-1.5 py-0.5 rounded-[2px] text-[10px] tracking-wider uppercase border border-[#FDE68A] dark:border-[#D97706] shrink-0 mt-0.5 sm:mt-0">
               DEMO DATA
             </span>
             <span>
-              Viewing enterprise AI visibility benchmark for <strong>{client.brandName}</strong>.
+              Viewing benchmark demo data for <strong>{client.brandName}</strong>. Ready to track your real brand?
             </span>
           </div>
-          <button
-            onClick={onOpenRunModal}
-            className="px-3 py-1.5 sm:py-1 bg-[#111827] hover:bg-[#1f2937] text-white font-bold uppercase tracking-wider text-[11px] rounded transition-colors shrink-0 self-end sm:self-auto shadow-xs"
-          >
-            Run Cycle
-          </button>
+          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+            {onClearDemoData && (
+              <button
+                onClick={onClearDemoData}
+                className="px-3 py-1.5 sm:py-1 bg-white dark:bg-[#1E293B] hover:bg-[#F3F4F6] dark:hover:bg-[#334155] text-[#92400E] dark:text-[#FDE68A] font-bold uppercase tracking-wider text-[11px] rounded border border-[#FDE68A] dark:border-[#B45309] transition-colors shadow-xs"
+              >
+                Clear Mock Data & Track Real Brand
+              </button>
+            )}
+            <button
+              onClick={onOpenRunModal}
+              className="px-3 py-1.5 sm:py-1 bg-[#111827] dark:bg-[#4338CA] hover:bg-[#1f2937] dark:hover:bg-[#3730A3] text-white font-bold uppercase tracking-wider text-[11px] rounded transition-colors shadow-xs"
+            >
+              Run Real Cycle
+            </button>
+          </div>
         </div>
       )}
 
       {/* KPI Cards Row (2-col mobile, 4-col desktop) */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
         {/* Mention Rate */}
-        <div className="bg-white p-3.5 sm:p-5 border border-[#E5E7EB] shadow-2xs">
-          <div className="text-[10px] text-[#6B7280] uppercase tracking-wider mb-1 font-bold truncate">
+        <div className="bg-white dark:bg-[#0F172A] p-3.5 sm:p-5 border border-[#E5E7EB] dark:border-[#1E293B] shadow-2xs">
+          <div className="text-[10px] text-[#6B7280] dark:text-[#94A3B8] uppercase tracking-wider mb-1 font-bold truncate">
             Avg Mention Rate
           </div>
-          <div className="text-xl sm:text-2xl font-semibold text-[#111827]">
+          <div className="text-xl sm:text-2xl font-semibold text-[#111827] dark:text-[#F8FAFC]">
             {Math.round(mentionRate * 100)}%{' '}
-            <span className="text-[10px] sm:text-xs font-mono text-[#9CA3AF] font-normal">
+            <span className="text-[10px] sm:text-xs font-mono text-[#9CA3AF] dark:text-[#64748B] font-normal">
               (n={totalRunsInLatest})
             </span>
           </div>
-          <div className="text-[10px] sm:text-[11px] text-[#6B7280] mt-1 truncate">
+          <div className="text-[10px] sm:text-[11px] text-[#6B7280] dark:text-[#94A3B8] mt-1 truncate">
             {Math.round(mentionRate * totalRunsInLatest)} of {totalRunsInLatest} runs
           </div>
         </div>
 
         {/* Citation Rate */}
-        <div className="bg-white p-3.5 sm:p-5 border border-[#E5E7EB] shadow-2xs">
-          <div className="text-[10px] text-[#6B7280] uppercase tracking-wider mb-1 font-bold truncate">
+        <div className="bg-white dark:bg-[#0F172A] p-3.5 sm:p-5 border border-[#E5E7EB] dark:border-[#1E293B] shadow-2xs">
+          <div className="text-[10px] text-[#6B7280] dark:text-[#94A3B8] uppercase tracking-wider mb-1 font-bold truncate">
             Avg Citation Rate
           </div>
-          <div className="text-xl sm:text-2xl font-semibold text-[#111827]">
+          <div className="text-xl sm:text-2xl font-semibold text-[#111827] dark:text-[#F8FAFC]">
             {Math.round(citationRate * 100)}%{' '}
-            <span className="text-[10px] sm:text-xs font-mono text-[#9CA3AF] font-normal">
+            <span className="text-[10px] sm:text-xs font-mono text-[#9CA3AF] dark:text-[#64748B] font-normal">
               (n={totalRunsInLatest})
             </span>
           </div>
-          <div className="text-[10px] sm:text-[11px] text-[#6B7280] mt-1 truncate">
+          <div className="text-[10px] sm:text-[11px] text-[#6B7280] dark:text-[#94A3B8] mt-1 truncate">
             Cited in {Math.round(citationRate * totalRunsInLatest)} runs
           </div>
         </div>
 
         {/* Share of Voice */}
-        <div className="bg-white p-3.5 sm:p-5 border border-[#E5E7EB] shadow-2xs">
-          <div className="text-[10px] text-[#6B7280] uppercase tracking-wider mb-1 font-bold truncate">
+        <div className="bg-white dark:bg-[#0F172A] p-3.5 sm:p-5 border border-[#E5E7EB] dark:border-[#1E293B] shadow-2xs">
+          <div className="text-[10px] text-[#6B7280] dark:text-[#94A3B8] uppercase tracking-wider mb-1 font-bold truncate">
             Share of Voice
           </div>
-          <div className="text-xl sm:text-2xl font-semibold text-[#10B981]">
+          <div className="text-xl sm:text-2xl font-semibold text-[#10B981] dark:text-[#34D399]">
             {Math.round(clientSov * 100)}%{' '}
-            <span className="text-[10px] sm:text-xs font-mono text-[#9CA3AF] font-normal">
+            <span className="text-[10px] sm:text-xs font-mono text-[#9CA3AF] dark:text-[#64748B] font-normal">
               (n={totalRunsInLatest})
             </span>
           </div>
-          <div className="text-[10px] sm:text-[11px] text-[#6B7280] mt-1 truncate">
+          <div className="text-[10px] sm:text-[11px] text-[#6B7280] dark:text-[#94A3B8] mt-1 truncate">
             Rival: {topCompetitor?.brand || 'N/A'} ({Math.round((topCompetitor?.share ?? 0) * 100)}%)
           </div>
         </div>
 
         {/* Volatility Score */}
-        <div className="bg-white p-3.5 sm:p-5 border border-[#E5E7EB] shadow-2xs">
-          <div className="text-[10px] text-[#6B7280] uppercase tracking-wider mb-1 font-bold truncate">
+        <div className="bg-white dark:bg-[#0F172A] p-3.5 sm:p-5 border border-[#E5E7EB] dark:border-[#1E293B] shadow-2xs">
+          <div className="text-[10px] text-[#6B7280] dark:text-[#94A3B8] uppercase tracking-wider mb-1 font-bold truncate">
             Volatility Score
           </div>
-          <div className="text-xl sm:text-2xl font-semibold text-[#F59E0B]">
+          <div className="text-xl sm:text-2xl font-semibold text-[#F59E0B] dark:text-[#FBBF24]">
             {volatileCount > 0 ? (volatileCount >= 3 ? 'High' : 'Medium') : 'Stable'}{' '}
-            <span className="text-[10px] sm:text-xs font-mono text-[#9CA3AF] font-normal">
+            <span className="text-[10px] sm:text-xs font-mono text-[#9CA3AF] dark:text-[#64748B] font-normal">
               ({volatileCount})
             </span>
           </div>
-          <div className="text-[10px] sm:text-[11px] text-[#6B7280] mt-1 truncate">
+          <div className="text-[10px] sm:text-[11px] text-[#6B7280] dark:text-[#94A3B8] mt-1 truncate">
             {prompts.filter((p) => p.active).length} active prompts
           </div>
         </div>
+      </section>
+
+      {/* Performance Trends View (Recharts: Mention and Citation rates over last 5 cycles) */}
+      <section>
+        <PerformanceTrendsChart
+          cycles={cycleAggregates}
+          client={client}
+          maxCycles={5}
+        />
       </section>
 
       {/* Flagship View: Prompt × Brand Presence Heatmap & Competitor Matrix Toggle */}
       <section className="space-y-3">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold uppercase tracking-wider text-[#111827]">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC]">
               Heatmap:
             </span>
-            <div className="inline-flex flex-wrap border border-[#D1D5DB] p-0.5 bg-[#F9FAFB] rounded-xs">
+            <div className="inline-flex flex-wrap border border-[#D1D5DB] dark:border-[#334155] p-0.5 bg-[#F9FAFB] dark:bg-[#1E293B] rounded-xs">
               <button
                 onClick={() => setHeatmapMode('standard')}
                 className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 text-xs font-bold uppercase tracking-wider transition-colors ${
                   heatmapMode === 'standard'
-                    ? 'bg-white text-[#111827] shadow-xs border border-[#E5E7EB]'
-                    : 'text-[#6B7280] hover:text-[#111827]'
+                    ? 'bg-white dark:bg-[#0F172A] text-[#111827] dark:text-[#F8FAFC] shadow-xs border border-[#E5E7EB] dark:border-[#334155]'
+                    : 'text-[#6B7280] dark:text-[#94A3B8] hover:text-[#111827] dark:hover:text-[#F8FAFC]'
                 }`}
               >
                 <Grid className="w-3.5 h-3.5" />
@@ -158,8 +181,8 @@ export function OverviewTab({
                 onClick={() => setHeatmapMode('correlation')}
                 className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 text-xs font-bold uppercase tracking-wider transition-colors ${
                   heatmapMode === 'correlation'
-                    ? 'bg-white text-[#111827] shadow-xs border border-[#E5E7EB]'
-                    : 'text-[#6B7280] hover:text-[#111827]'
+                    ? 'bg-white dark:bg-[#0F172A] text-[#111827] dark:text-[#F8FAFC] shadow-xs border border-[#E5E7EB] dark:border-[#334155]'
+                    : 'text-[#6B7280] dark:text-[#94A3B8] hover:text-[#111827] dark:hover:text-[#F8FAFC]'
                 }`}
               >
                 <LayoutList className="w-3.5 h-3.5" />
@@ -203,27 +226,34 @@ export function OverviewTab({
         />
       </div>
 
+      {/* GSC & GA4 Organic Search vs AI Visibility Chart */}
+      <GscGa4VisibilityChart
+        clientDomain={client.domain}
+        overallMentionRate={mentionRate}
+        totalRuns={totalRunsInLatest}
+      />
+
       {/* High-Priority Actions & Diagnostic Highlights */}
-      <div className="bg-white border border-[#E5E7EB] p-5 shadow-xs">
-        <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#F3F4F6]">
+      <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs">
+        <div className="flex items-center justify-between mb-4 pb-3 border-b border-[#F3F4F6] dark:border-[#1E293B]">
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827]">
+            <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827] dark:text-[#F8FAFC]">
               High-Impact Implementable Actions
             </h3>
-            <p className="text-xs text-[#6B7280] mt-0.5">
+            <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5">
               Concrete content & structured schema changes diagnosed from observed grounding gaps
             </p>
           </div>
           <button
             onClick={() => onNavigateTab('Actions')}
-            className="text-xs font-bold uppercase tracking-wider text-[#111827] hover:text-[#374151] flex items-center gap-1 transition-colors"
+            className="text-xs font-bold uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC] hover:text-[#374151] dark:hover:text-[#CBD5E1] flex items-center gap-1 transition-colors"
           >
             View All ({actions.length}) <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {pendingActions.length === 0 ? (
-          <div className="text-xs text-[#6B7280] p-6 bg-[#F9FAFB] border border-[#E5E7EB] text-center">
+          <div className="text-xs text-[#6B7280] dark:text-[#94A3B8] p-6 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] text-center">
             All diagnosed actions have been implemented and retested.
           </div>
         ) : (
@@ -231,7 +261,7 @@ export function OverviewTab({
             {pendingActions.slice(0, 3).map((action) => (
               <div
                 key={action.id}
-                className="p-4 border border-[#E5E7EB] bg-[#F9FAFB] hover:bg-white transition-colors"
+                className="p-4 border border-[#E5E7EB] dark:border-[#334155] bg-[#F9FAFB] dark:bg-[#1E293B] hover:bg-white dark:hover:bg-[#0F172A] transition-colors"
               >
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-1">
@@ -239,24 +269,24 @@ export function OverviewTab({
                       <span
                         className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-[2px] border ${
                           action.priority === 'Critical'
-                            ? 'bg-[#FEE2E2] text-[#991B1B] border-[#FECACA]'
+                            ? 'bg-[#FEE2E2] dark:bg-[#7F1D1D] text-[#991B1B] dark:text-[#FCA5A5] border-[#FECACA] dark:border-[#991B1B]'
                             : action.priority === 'High'
-                            ? 'bg-[#FEF3C7] text-[#D97706] border-[#FDE68A]'
-                            : 'bg-[#EEF2FF] text-[#1E40AF] border-[#DBEAFE]'
+                            ? 'bg-[#FEF3C7] dark:bg-[#78350F] text-[#D97706] dark:text-[#FDE68A] border-[#FDE68A] dark:border-[#D97706]'
+                            : 'bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#1E40AF] dark:text-[#A5B4FC] border-[#DBEAFE] dark:border-[#3730A3]'
                         }`}
                       >
                         {action.priority}
                       </span>
-                      <span className="text-xs font-bold text-[#111827]">{action.title}</span>
+                      <span className="text-xs font-bold text-[#111827] dark:text-[#F8FAFC]">{action.title}</span>
                     </div>
-                    <p className="text-xs text-[#374151] line-clamp-2">{action.exactRecommendation}</p>
-                    <div className="text-[11px] text-[#6B7280] font-mono">
+                    <p className="text-xs text-[#374151] dark:text-[#CBD5E1] line-clamp-2">{action.exactRecommendation}</p>
+                    <div className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] font-mono">
                       Target: {action.promptIds.join(', ')} • Effort: {action.effort} • Impact: {action.impact}
                     </div>
                   </div>
                   <button
                     onClick={() => onNavigateTab('Actions')}
-                    className="px-3 py-1.5 bg-white hover:bg-[#F3F4F6] border border-[#D1D5DB] text-xs font-semibold text-[#111827] shrink-0 transition-colors shadow-xs"
+                    className="px-3 py-1.5 bg-white dark:bg-[#0F172A] hover:bg-[#F3F4F6] dark:hover:bg-[#334155] border border-[#D1D5DB] dark:border-[#334155] text-xs font-semibold text-[#111827] dark:text-[#F8FAFC] shrink-0 transition-colors shadow-xs"
                   >
                     Open Action
                   </button>

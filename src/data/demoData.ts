@@ -1,5 +1,35 @@
-import { Client, Prompt, RunCycle, Run, Diagnostic, ActionItem, PageAnalysis, CycleAggregate } from '../types';
+import { Client, Prompt, RunCycle, Run, Diagnostic, ActionItem, PageAnalysis, CycleAggregate, CategorizedCompetitor } from '../types';
 import { computeCycleAggregate } from '../services/metrics';
+
+export const SFP_CATEGORIZED_COMPETITORS: CategorizedCompetitor[] = [
+  // ECOMMERCE
+  { brand: 'Misafirliq', domain: 'misafirliq.com', category: 'ECOMMERCE' },
+  { brand: 'HUB Catering / The HUB Food', domain: 'hubcatering.com', category: 'ECOMMERCE' },
+  { brand: 'Ginger Patisserie & Catering', domain: 'gingeronlineshop.com', category: 'ECOMMERCE' },
+  { brand: 'Süprem Catering', domain: 'supremcatering.com', category: 'ECOMMERCE' },
+  { brand: 'Ash İstanbul Catering', domain: 'ashistanbulcatering.com', category: 'ECOMMERCE' },
+  { brand: 'Cuisine Online', domain: 'cuisine-online.com', category: 'ECOMMERCE' },
+  { brand: 'Canella', domain: 'canella.com.tr', category: 'ECOMMERCE' },
+  { brand: 'Art Cafe', domain: 'artcafe.com.tr', category: 'ECOMMERCE' },
+  { brand: 'YMK Catering', domain: 'ymkcatering.com', category: 'ECOMMERCE' },
+
+  // NO ECOMMERCE
+  { brand: 'Concept Team', domain: 'conceptteam.org', category: 'NO ECOMMERCE' },
+  { brand: 'Maillard Dining', domain: 'maillarddining.com', category: 'NO ECOMMERCE' },
+  { brand: 'Vanessa Catering', domain: 'vanessacatering.com', category: 'NO ECOMMERCE' },
+  { brand: 'Table Tales', domain: 'tabletales.com.tr', category: 'NO ECOMMERCE' },
+  { brand: 'Art of Kitchen', domain: 'artofkitchen.com.tr', category: 'NO ECOMMERCE' },
+  { brand: 'Roka Davet', domain: 'rokadavet.com', category: 'NO ECOMMERCE' },
+  { brand: 'Bistro Fine Dining Catering', domain: 'bistrocatering.com.tr', category: 'NO ECOMMERCE' },
+  { brand: 'Vadi Catering', domain: 'vadicatering.com', category: 'NO ECOMMERCE' },
+  { brand: 'Event & More', domain: 'eventmore.com.tr', category: 'NO ECOMMERCE' },
+  { brand: 'Cuisine Catering', domain: 'cuisine.com.tr', category: 'NO ECOMMERCE' },
+  { brand: 'Brunch Plus', domain: 'brunchplus.com', category: 'NO ECOMMERCE' },
+  { brand: 'Evestia Catering & Events', domain: 'evestiacatering.com', category: 'NO ECOMMERCE' },
+  { brand: 'Dionisos Catering', domain: 'dionisoscatering.com.tr', category: 'NO ECOMMERCE' },
+  { brand: 'İstanbul Fuar Catering', domain: 'istanbulfuarcatering.com', category: 'NO ECOMMERCE' },
+  { brand: 'RB Organizasyon Catering', domain: 'rb-organizasyon.com', category: 'NO ECOMMERCE' },
+];
 
 export const DEMO_CLIENT: Client = {
   id: 'client-snacksforparty',
@@ -7,12 +37,13 @@ export const DEMO_CLIENT: Client = {
   brandName: 'Snacks For Party',
   aliases: ['Snacks For Party', 'SnacksForParty', 'Vanille Catering Snacks', 'Snacks For Party Catering', 'snacksforparty.com'],
   domain: 'snacksforparty.com',
-  competitorDomains: ['misafirliq.com', 'divancatering.com.tr', 'gourmetpack.com.tr', 'macrocenter.com.tr', 'backhaus.com.tr'],
-  competitorBrands: ['Misafirliq', 'Divan Catering', 'Gourmet Pack', 'Macrocenter Catering', 'Backhaus Catering'],
+  competitorDomains: SFP_CATEGORIZED_COMPETITORS.map((c) => c.domain),
+  competitorBrands: SFP_CATEGORIZED_COMPETITORS.map((c) => c.brand),
+  categorizedCompetitors: SFP_CATEGORIZED_COMPETITORS,
   industry: 'Gourmet Party Snack Boxes & Boutique Event Catering',
   market: 'Private Celebrations & Corporate Cocktail Events (Istanbul / Turkey)',
   language: 'Turkish & English',
-  isDemo: false,
+  isDemo: true,
   createdAt: '2026-07-01T09:00:00Z',
 };
 
@@ -327,20 +358,20 @@ function generateRunsForPrompts(): Run[] {
       query: p.text,
     };
 
-    // 3 runs per prompt for Cycle 3
+    // 3 runs per prompt for Cycle 3 (Gemini Grounded)
     for (let r = 1; r <= 3; r++) {
       const isMentioned = r <= 3 ? data.clientMentioned : false;
       const isCited = isMentioned && data.clientCited;
       const rank = isMentioned ? (r === 1 ? data.clientRank : data.clientRank ? data.clientRank : 1) : null;
 
       runs.push({
-        id: `run-c3-${p.id}-r${r}`,
+        id: `run-c3-${p.id}-gemini-r${r}`,
         ownerId: 'user-snacksforparty',
         clientId: 'client-snacksforparty',
         cycleId: 'cycle-3-latest',
         promptId: p.id,
         engine: 'gemini-grounded',
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         runIndex: r,
         runAt: `2026-08-24T10:0${r}:${idx < 10 ? '0' + idx : idx}Z`,
         answerText: data.answer,
@@ -377,6 +408,56 @@ function generateRunsForPrompts(): Run[] {
       });
     }
 
+    // 2 runs per prompt for Cycle 3 (Perplexity Sonar)
+    for (let r = 1; r <= 2; r++) {
+      // Perplexity sonar has slight variation in citation rate depending on prompt index
+      const ppxCited = (idx % 3 !== 0) && data.clientCited;
+      const ppxMentioned = data.clientMentioned;
+
+      runs.push({
+        id: `run-c3-${p.id}-ppx-r${r}`,
+        ownerId: 'user-snacksforparty',
+        clientId: 'client-snacksforparty',
+        cycleId: 'cycle-3-latest',
+        promptId: p.id,
+        engine: 'perplexity-sonar',
+        model: 'sonar-pro',
+        runIndex: r,
+        runAt: `2026-08-24T10:1${r}:${idx < 10 ? '0' + idx : idx}Z`,
+        answerText: `[Perplexity Sonar Answer] ${data.answer}`,
+        groundingSources: [
+          ...(ppxCited ? [{ uri: `https://www.perplexity.ai/search/sfp-${p.id}`, displayTitle: 'Snacks For Party Online Order', resolvedDomain: 'snacksforparty.com' }] : []),
+          { uri: `https://www.perplexity.ai/search/comp-${p.id}`, displayTitle: `${data.competitors[0]} Official Site`, resolvedDomain: data.competitors[0] === 'Misafirliq' ? 'misafirliq.com' : 'divancatering.com.tr' },
+        ],
+        webSearchQueries: [data.query],
+        brandMentioned: ppxMentioned,
+        brandCited: ppxCited,
+        position: ppxMentioned ? (ppxCited ? 1 : 2) : null,
+        prominence: ppxMentioned ? 0.25 : null,
+        mentionedBrands: [
+          {
+            name: 'Snacks For Party',
+            isClient: true,
+            isKnownCompetitor: false,
+            sentiment: 'Positive',
+            verbatimQuote: 'Snacks For Party catering kutuları',
+          },
+          ...data.competitors.map((c) => ({
+            name: c,
+            isClient: false,
+            isKnownCompetitor: true,
+            sentiment: 'Positive' as const,
+            verbatimQuote: `${c} menüleri`,
+          })),
+        ],
+        orderedList: true,
+        rankedNames: ppxCited ? ['Snacks For Party', ...data.competitors] : [...data.competitors, 'Snacks For Party'],
+        recommendedEntityType: 'Catering Service',
+        answerFormat: 'list',
+        error: null,
+      });
+    }
+
     // Baseline runs (Cycle 1)
     for (let r = 1; r <= 3; r++) {
       const baseMentioned = r === 1; // 33% baseline
@@ -387,7 +468,7 @@ function generateRunsForPrompts(): Run[] {
         cycleId: 'cycle-1-baseline',
         promptId: p.id,
         engine: 'gemini-grounded',
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         runIndex: r,
         runAt: `2026-08-01T10:0${r}:${idx < 10 ? '0' + idx : idx}Z`,
         answerText: baseMentioned

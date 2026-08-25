@@ -10,6 +10,14 @@ export interface VisibilityEngineInfo {
 
 export type IntentLayer = 'Informational' | 'Commercial' | 'Comparative' | 'Navigational' | 'Transactional';
 
+export type CompetitorCategory = 'ECOMMERCE' | 'NO ECOMMERCE';
+
+export interface CategorizedCompetitor {
+  brand: string;
+  domain: string;
+  category: CompetitorCategory;
+}
+
 export interface Client {
   id: string;
   ownerId: string;
@@ -18,9 +26,17 @@ export interface Client {
   domain: string;
   competitorDomains: string[];
   competitorBrands: string[];
+  categorizedCompetitors?: CategorizedCompetitor[];
   industry: string;
   market: string;
   language: string;
+  city?: string;
+  shortSummary?: string;
+  positioning?: string;
+  detailedDescription?: string;
+  targetAudience?: string;
+  productsServices?: string;
+  keyDifferentiators?: string;
   isDemo?: boolean;
   defaultRunsPerPrompt?: number;
   scheduledCycleFrequency?: 'off' | 'weekly' | 'biweekly' | 'monthly';
@@ -224,6 +240,35 @@ export interface AppSettings {
   activeEngine: EngineId;
   perplexityApiKey?: string;
   scheduledCycleFrequency?: 'off' | 'weekly' | 'biweekly' | 'monthly';
+}
+
+export interface GoogleIntegrationState {
+  gscConnected: boolean;
+  ga4Connected: boolean;
+  userEmail?: string;
+  selectedGscSite?: string;
+  selectedGa4PropertyId?: string;
+  availableGscSites?: Array<{ siteUrl: string; permissionLevel: string }>;
+  availableGa4Properties?: Array<{ propertyId: string; displayName: string }>;
+  lastSyncAt?: string;
+}
+
+export interface GscPerformanceData {
+  siteUrl: string;
+  date: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+export interface Ga4AiReferralData {
+  propertyId: string;
+  date: string;
+  sourceDomain: string; // e.g. chatgpt.com, gemini.google.com, perplexity.ai
+  sessions: number;
+  users: number;
+  conversions: number;
 }
 
 // Derived deterministic metric interfaces with explicit sample sizes
