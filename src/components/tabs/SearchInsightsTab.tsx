@@ -294,6 +294,57 @@ export function SearchInsightsTab({ client }: SearchInsightsTabProps) {
         </div>
       )}
 
+      {/* AEO / GEO Strategic Roadmap & Synergy Card */}
+      <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs space-y-4">
+        <div className="flex items-start justify-between border-b border-[#E5E7EB] dark:border-[#1E293B] pb-3">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest bg-[#F9FAFB] dark:bg-[#1E293B] text-[#111827] dark:text-[#F8FAFC] border border-[#E5E7EB] dark:border-[#334155] rounded">
+                GEO / AEO Strategic Guide
+              </span>
+              <span className="text-[11px] font-medium text-[#6B7280] dark:text-[#94A3B8]">
+                How GSC &amp; GA4 Directly Power AI Engine Visibility
+              </span>
+            </div>
+            <h3 className="text-sm font-bold uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC]">
+              Converting Search Console &amp; Analytics Data into AI Search Citations
+            </h3>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+          <div className="bg-[#F9FAFB] dark:bg-[#1E293B]/60 p-4 border border-[#E5E7EB] dark:border-[#1E293B] rounded space-y-2">
+            <div className="font-bold text-xs uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC] flex items-center gap-1.5">
+              <Search className="w-3.5 h-3.5 text-[#111827] dark:text-[#CBD5E1]" />
+              1. GSC Impression = LLM Candidate
+            </div>
+            <p className="text-xs text-[#4B5563] dark:text-[#94A3B8] leading-relaxed">
+              Gemini, Perplexity ve ChatGPT Search arama dizinlerini kullanır. GSC&apos;de yüksek gösterim (impression) alan sayfalarınız, yapay zeka modellerinin ilk taradığı ve atıf (citation) yaptığı ana kaynaklardır.
+            </p>
+          </div>
+
+          <div className="bg-[#F9FAFB] dark:bg-[#1E293B]/60 p-4 border border-[#E5E7EB] dark:border-[#1E293B] rounded space-y-2">
+            <div className="font-bold text-xs uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC] flex items-center gap-1.5">
+              <Bot className="w-3.5 h-3.5 text-[#111827] dark:text-[#CBD5E1]" />
+              2. GA4 AI Trafiği = ROI Ölçümü
+            </div>
+            <p className="text-xs text-[#4B5563] dark:text-[#94A3B8] leading-relaxed">
+              ChatGPT, Perplexity ve Gemini yanıtlarındaki bağlantılardan gelen gerçek ziyaretçileri ölçer. AI görünürlüğünüzün doğrudan organik trafiğe ve dönüşüme (conversion) etkisini doğrular.
+            </p>
+          </div>
+
+          <div className="bg-[#F9FAFB] dark:bg-[#1E293B]/60 p-4 border border-[#E5E7EB] dark:border-[#1E293B] rounded space-y-2">
+            <div className="font-bold text-xs uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC] flex items-center gap-1.5">
+              <TrendingUp className="w-3.5 h-3.5 text-[#111827] dark:text-[#CBD5E1]" />
+              3. AEO/GEO Fırsat Tespiti
+            </div>
+            <p className="text-xs text-[#4B5563] dark:text-[#94A3B8] leading-relaxed">
+              GSC&apos;de gösterimi yüksek ama LLM atıfı (citation) henüz oluşmamış sayfalar <strong>AEO Öncelikli İyileştirme Hedefidir</strong>. Bu sayfalara karşılaştırma tablosu ve JSON-LD schema eklenmelidir.
+            </p>
+          </div>
+        </div>
+      </div>
+
       {/* Trend + Projection */}
       <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs space-y-3">
         <div className="pb-3 border-b border-[#F3F4F6] dark:border-[#1E293B] flex items-center justify-between flex-wrap gap-2">

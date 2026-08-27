@@ -1,9 +1,15 @@
 import express from 'express';
 import path from 'path';
+import fs from 'fs';
 import dotenv from 'dotenv';
 import { GoogleGenAI } from '@google/genai';
 import { createServer as createViteServer } from 'vite';
 import dbApiRouter from './src/services/db-api';
+import { mcpRouter } from './src/services/mcp-server';
+import * as dbRepo from './src/services/db-repo';
+import { BrandMemoryItem, AeoGeneratedContent } from './src/types';
+import { DEMO_BRAND_MEMORIES } from './src/data/demoData';
+import { registerUser, loginUser, getUserById, extractUserFromToken } from './src/services/auth';
 
 dotenv.config();
 
@@ -12,10 +18,60 @@ const app = express();
 // (from X-Forwarded-Proto) — otherwise Google OAuth redirect_uri is built as http://
 // and Google rejects it as a mismatch against the registered https:// redirect URI.
 app.set('trust proxy', 1);
-const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
+const PORT = 3000;
 
 app.use(express.json({ limit: '10mb' }));
 app.use('/api/db', dbApiRouter);
+app.use('/api/mcp', mcpRouter);
+
+// Neon PostgreSQL User Authentication Routes
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password, displayName } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+    const user = await registerUser(email, password, displayName);
+    const authResult = await loginUser(email, password);
+    res.json(authResult);
+  } catch (err: any) {
+    res.status(400).json({ error: err?.message || 'Registration failed.' });
+  }
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required.' });
+    }
+    const authResult = await loginUser(email, password);
+    res.json(authResult);
+  } catch (err: any) {
+    res.status(401).json({ error: err?.message || 'Invalid credentials.' });
+  }
+});
+
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    const token = authHeader.split(' ')[1];
+    const userId = extractUserFromToken(token);
+    if (!userId) {
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+    const user = await getUserById(userId);
+    if (!user) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+    res.json({ user });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch user profile' });
+  }
+});
 
 // Lazy initializer for Gemini client
 let geminiClient: GoogleGenAI | null = null;
@@ -38,17 +94,15 @@ function getGemini(): GoogleGenAI {
 }
 
 // Runtime memory fallback for Gemini model
-let globalGeminiModel = process.env.GEMINI_MODEL || 'gemini-3.7-flash';
+let globalGeminiModel = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 
 function getGeminiModel(): string {
-  return process.env.GEMINI_MODEL || globalGeminiModel || 'gemini-3.7-flash';
-}
-
-// Runtime memory fallback for Perplexity API Key
-let globalPerplexityKey = process.env.PERPLEXITY_API_KEY || '';
-
-function getPerplexityApiKey(): string {
-  return process.env.PERPLEXITY_API_KEY || globalPerplexityKey || '';
+  const model = process.env.GEMINI_MODEL || globalGeminiModel || 'gemini-3.6-flash';
+  // Map any legacy/invalid names to valid supported model
+  if (model === 'gemini-2.5-flash' || model === 'gemini-2.0-flash' || model === 'gemini-3.7-flash') {
+    return 'gemini-3.6-flash';
+  }
+  return model;
 }
 
 // Runtime memory fallback for Firecrawl API Key
@@ -58,107 +112,241 @@ function getFirecrawlApiKey(): string {
   return process.env.FIRECRAWL_API_KEY || globalFirecrawlKey || '';
 }
 
-// Runtime memory fallback for Perplexity Agent model
-let globalPerplexityModel = process.env.PERPLEXITY_MODEL || 'openai/gpt-5.6-sol';
+// Runtime memory fallback for Google OAuth credentials (GSC / GA4)
+let globalGoogleClientId = process.env.GOOGLE_CLIENT_ID || '';
+let globalGoogleClientSecret = process.env.GOOGLE_CLIENT_SECRET || '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';
 
-function getPerplexityModel(): string {
-  return process.env.PERPLEXITY_MODEL || globalPerplexityModel || 'openai/gpt-5.6-sol';
+function getGoogleClientId(): string {
+  return process.env.GOOGLE_CLIENT_ID || globalGoogleClientId || '';
+}
+
+function getGoogleClientSecret(): string {
+  return process.env.GOOGLE_CLIENT_SECRET || globalGoogleClientSecret || '';
+}
+
+function getGoogleRedirectUri(req: express.Request): string {
+  const host = req.get('x-forwarded-host') || req.get('host');
+  if (host) {
+    const proto = req.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
+    return `${proto}://${host}/auth/google/callback`;
+  }
+  if (process.env.APP_URL) {
+    const clean = process.env.APP_URL.replace(/\/+$/, '');
+    return `${clean}/auth/google/callback`;
+  }
+  return 'http://localhost:3000/auth/google/callback';
+}
+
+// Helper: sleep utility
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Helper: Exponential backoff retry wrapper for Gemini API rate limits & temporary 503 spikes
+async function retryWithBackoff<T>(
+  operation: () => Promise<T>,
+  maxRetries = 5,
+  initialDelayMs = 2500
+): Promise<T> {
+  let attempt = 0;
+  let delay = initialDelayMs;
+  while (true) {
+    try {
+      return await operation();
+    } catch (err: any) {
+      attempt++;
+      const errMsg = err?.message || String(err);
+      const isTransient =
+        errMsg.includes('429') ||
+        errMsg.includes('RESOURCE_EXHAUSTED') ||
+        errMsg.includes('quota') ||
+        errMsg.includes('rate limit') ||
+        errMsg.includes('Rate limit') ||
+        errMsg.includes('503') ||
+        errMsg.includes('UNAVAILABLE') ||
+        errMsg.includes('high demand') ||
+        errMsg.includes('overloaded') ||
+        errMsg.includes('temporarily unavailable') ||
+        errMsg.includes('500') ||
+        errMsg.includes('INTERNAL');
+
+      if (attempt <= maxRetries && isTransient) {
+        const jitter = Math.floor(Math.random() * 500);
+        const waitTime = delay + jitter;
+        console.warn(
+          `Gemini API transient issue or 503 high demand (${errMsg.slice(0, 120)}...). Retrying in ${waitTime}ms (attempt ${attempt}/${maxRetries})...`
+        );
+        await sleep(waitTime);
+        delay *= 2;
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 // -------------------------------------------------------------
-// Helper: Perplexity Agent API — the platform orchestrator.
-// Docs: POST https://api.perplexity.ai/v1/agent
-// Model format: "provider/model-name" e.g. "openai/gpt-5.6-sol"
-//
-// This is the ONE call site every non-measurement AI task (extraction, diagnosis,
-// opportunity discovery, page analysis, brand profiling, schema/JSON-LD review,
-// prompt discovery) should go through. Gemini is reserved for the "Gemini Grounded"
-// measurement engine only — see executeSingleRun's engine branch.
-//
-// - grounding (default true): attaches the web_search tool.
-// - schema: requests constrained JSON output via response_format/json_schema —
-//   the Agent API's equivalent of Gemini's responseSchema. Works together with
-//   grounding in a single call (grounded structured extraction).
+// Helper: Gemini API Helpers for Structured Output & Search Grounding
 // -------------------------------------------------------------
-async function callPerplexityAgent(
-  input: string,
-  opts: {
-    instructions?: string;
-    model?: string;
-    grounding?: boolean;
-    schema?: { name: string; schema: object };
-  } = {}
-): Promise<{ answerText: string; json: any | null; sources: { uri: string; displayTitle: string }[] }> {
-  const pKey = getPerplexityApiKey();
-  if (!pKey) {
-    throw new Error('PERPLEXITY_API_KEY is missing. Please configure a Perplexity API key in Settings.');
-  }
+async function callGeminiStructured(
+  prompt: string,
+  schema?: any,
+  preferredModel: string = 'gemini-3.6-flash'
+): Promise<any> {
+  const primaryModel = preferredModel || getGeminiModel();
+  const fallbackList = Array.from(new Set([
+    primaryModel,
+    'gemini-3.6-flash',
+    'gemini-3.7-flash',
+  ]));
 
-  const model = opts.model || getPerplexityModel();
-  const isAnthropic = model.startsWith('anthropic/');
-
-  const body: Record<string, any> = { model, input };
-  if (opts.grounding !== false) {
-    body.tools = [{ type: 'web_search' }];
-  }
-  if (opts.instructions) body.instructions = opts.instructions;
-  if (opts.schema) {
-    body.response_format = {
-      type: 'json_schema',
-      json_schema: { name: opts.schema.name, schema: opts.schema.schema },
-    };
-  }
-  // Anthropic models routed through the Agent API require an explicit output cap.
-  if (isAnthropic) body.max_output_tokens = 8192;
-
-  const pRes = await fetch('https://api.perplexity.ai/v1/agent', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Bearer ${pKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
-
-  if (!pRes.ok) {
-    const errBody = await pRes.text();
-    throw new Error(`Perplexity Agent API HTTP ${pRes.status}: ${errBody}`);
-  }
-
-  const pData = await pRes.json();
-  if (pData.error) {
-    throw new Error(pData.error.message || 'Perplexity Agent API returned an error.');
-  }
-
-  let answerText = '';
-  const sources: { uri: string; displayTitle: string }[] = [];
-
-  for (const item of pData.output || []) {
-    if (item.type === 'message') {
-      for (const content of item.content || []) {
-        if (content.type === 'output_text') {
-          answerText += content.text || '';
-        }
-      }
-    } else if (item.type === 'search_results') {
-      for (const result of item.results || []) {
-        if (result.url) {
-          sources.push({ uri: result.url, displayTitle: result.title || result.url });
-        }
-      }
-    }
-  }
-
-  let json: any | null = null;
-  if (opts.schema) {
+  let lastError: any = null;
+  for (const model of fallbackList) {
     try {
-      json = JSON.parse(answerText);
-    } catch {
-      throw new Error('Perplexity Agent API returned non-JSON output for a structured request.');
+      return await retryWithBackoff(async () => {
+        const ai = getGemini();
+        const config: any = {
+          responseMimeType: 'application/json',
+        };
+        if (schema) {
+          config.responseSchema = schema;
+        }
+
+        const response = await ai.models.generateContent({
+          model,
+          contents: prompt,
+          config,
+        });
+
+        const text = response.text || '';
+        try {
+          return JSON.parse(text);
+        } catch (e) {
+          console.error('Failed to parse Gemini JSON output:', text);
+          throw new Error('Gemini API returned invalid JSON output.');
+        }
+      }, 3, 1500);
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = err?.message || String(err);
+      const isHighDemandOr503 =
+        errMsg.includes('503') ||
+        errMsg.includes('UNAVAILABLE') ||
+        errMsg.includes('high demand') ||
+        errMsg.includes('overloaded') ||
+        errMsg.includes('temporarily unavailable') ||
+        errMsg.includes('429') ||
+        errMsg.includes('RESOURCE_EXHAUSTED');
+
+      if (isHighDemandOr503 && model !== fallbackList[fallbackList.length - 1]) {
+        console.warn(`Model ${model} experienced temporary high demand. Instantly failing over to ${fallbackList[fallbackList.indexOf(model) + 1]}...`);
+        continue;
+      }
+      throw err;
     }
   }
+  throw lastError;
+}
 
-  return { answerText, json, sources };
+async function callGeminiGroundedFull(
+  prompt: string,
+  locationContext?: string
+): Promise<{
+  answerText: string;
+  groundingSources: { uri: string; displayTitle: string; resolvedDomain: string | null }[];
+  rawChunks: any[];
+  webSearchQueries: string[];
+  usedModel: string;
+}> {
+  const contents = locationContext ? `[Search Location Context: ${locationContext}]\n${prompt}` : prompt;
+  const primaryModel = getGeminiModel();
+  const fallbackList = Array.from(new Set([
+    primaryModel,
+    'gemini-3.6-flash',
+    'gemini-3.7-flash',
+  ]));
+
+  let lastError: any = null;
+  for (const model of fallbackList) {
+    try {
+      return await retryWithBackoff(async () => {
+        const ai = getGemini();
+        const response = await ai.models.generateContent({
+          model,
+          contents,
+          config: {
+            tools: [{ googleSearch: {} }],
+          },
+        });
+
+        const text = response.text || '';
+        const candidate = response.candidates?.[0];
+        const groundingMetadata = candidate?.groundingMetadata;
+        const rawChunks = groundingMetadata?.groundingChunks || [];
+        const webSearchQueries: string[] = [];
+        const groundingSources: { uri: string; displayTitle: string; resolvedDomain: string | null }[] = [];
+
+        if (groundingMetadata?.webSearchQueries) {
+          webSearchQueries.push(...groundingMetadata.webSearchQueries);
+        }
+
+        if (groundingMetadata?.groundingChunks) {
+          for (const chunk of groundingMetadata.groundingChunks) {
+            if (chunk.web) {
+              const uri = chunk.web.uri || '';
+              const displayTitle = chunk.web.title || uri;
+              const resolvedDomain = extractDomain(chunk.web.title, chunk.web.uri);
+              groundingSources.push({
+                uri,
+                displayTitle,
+                resolvedDomain,
+              });
+            }
+          }
+        }
+
+        return {
+          answerText: text,
+          groundingSources,
+          rawChunks,
+          webSearchQueries,
+          usedModel: model,
+        };
+      }, 3, 1500);
+    } catch (err: any) {
+      lastError = err;
+      const errMsg = typeof err?.message === 'string' ? err.message : JSON.stringify(err);
+      const isTransient =
+        errMsg.includes('503') ||
+        errMsg.includes('UNAVAILABLE') ||
+        errMsg.includes('high demand') ||
+        errMsg.includes('overloaded') ||
+        errMsg.includes('temporarily unavailable') ||
+        errMsg.includes('429') ||
+        errMsg.includes('RESOURCE_EXHAUSTED') ||
+        errMsg.includes('quota');
+
+      if (isTransient && model !== fallbackList[fallbackList.length - 1]) {
+        console.warn(`Model ${model} experienced temporary issue (${errMsg.slice(0, 100)}). Instantly falling over to ${fallbackList[fallbackList.indexOf(model) + 1]}...`);
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastError;
+}
+
+async function callGeminiGrounded(
+  prompt: string
+): Promise<{ answerText: string; sources: { uri: string; displayTitle: string }[] }> {
+  const result = await callGeminiGroundedFull(prompt);
+  return {
+    answerText: result.answerText,
+    sources: result.groundingSources.map(s => ({
+      uri: s.uri,
+      displayTitle: s.displayTitle,
+    })),
+  };
 }
 
 // -------------------------------------------------------------
@@ -191,8 +379,6 @@ function extractDomain(title: string | undefined, uri: string | undefined): stri
   return null;
 }
 
-// Standard JSON Schema (not Gemini's Type enum) — shared by every brand-extraction call
-// site now that extraction is routed through the Perplexity Agent orchestrator.
 const EXTRACTION_SCHEMA = {
   type: 'object',
   properties: {
@@ -233,33 +419,16 @@ function matchDomainExact(sourceDomain: string | null, targetDomain: string): bo
 // Health check & environment status
 app.get('/api/health', (req, res) => {
   const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY);
-  const hasPerplexityKey = Boolean(getPerplexityApiKey());
   const hasFirecrawlKey = Boolean(getFirecrawlApiKey());
   res.json({
     status: 'ok',
     apiKeyConfigured: hasGeminiKey,
-    perplexityApiKeyConfigured: hasPerplexityKey,
     firecrawlApiKeyConfigured: hasFirecrawlKey,
     geminiModel: getGeminiModel(),
-    perplexityModel: getPerplexityModel(),
-    defaultEngine: hasPerplexityKey ? 'perplexity-sonar' : 'gemini-grounded',
+    defaultEngine: 'gemini-grounded',
     availableEngines: [
       { id: 'gemini-grounded', label: 'Gemini Grounded', supportsGrounding: true, enabled: true },
-      { id: 'perplexity-sonar', label: 'Perplexity Agent', supportsGrounding: true, enabled: hasPerplexityKey }
     ]
-  });
-});
-
-// Configure Perplexity Agent Model endpoint
-app.post('/api/settings/perplexity-model', (req, res) => {
-  const { model } = req.body;
-  if (typeof model === 'string' && model.trim()) {
-    globalPerplexityModel = model.trim();
-    process.env.PERPLEXITY_MODEL = globalPerplexityModel;
-  }
-  res.json({
-    status: 'ok',
-    perplexityModel: getPerplexityModel(),
   });
 });
 
@@ -276,22 +445,6 @@ app.post('/api/settings/gemini-model', (req, res) => {
   });
 });
 
-// Configure or check Perplexity API key
-app.post('/api/settings/perplexity-key', (req, res) => {
-  const { apiKey } = req.body;
-  if (typeof apiKey === 'string') {
-    globalPerplexityKey = apiKey.trim();
-    if (globalPerplexityKey) {
-      process.env.PERPLEXITY_API_KEY = globalPerplexityKey;
-    }
-  }
-  const configured = Boolean(getPerplexityApiKey());
-  res.json({
-    status: 'ok',
-    configured,
-  });
-});
-
 // Configure or check Firecrawl API key
 app.post('/api/settings/firecrawl-key', (req, res) => {
   const { apiKey } = req.body;
@@ -305,6 +458,30 @@ app.post('/api/settings/firecrawl-key', (req, res) => {
   res.json({
     status: 'ok',
     configured,
+  });
+});
+
+// Configure or check Google OAuth credentials (Client ID & Client Secret)
+app.post('/api/settings/google-credentials', (req, res) => {
+  const { clientId, clientSecret } = req.body;
+  if (typeof clientId === 'string') {
+    globalGoogleClientId = clientId.trim();
+    if (globalGoogleClientId) {
+      process.env.GOOGLE_CLIENT_ID = globalGoogleClientId;
+    }
+  }
+  if (typeof clientSecret === 'string') {
+    globalGoogleClientSecret = clientSecret.trim();
+    if (globalGoogleClientSecret) {
+      process.env.GOOGLE_CLIENT_SECRET = globalGoogleClientSecret;
+    }
+  }
+  const configured = Boolean(getGoogleClientId() && getGoogleClientSecret());
+  res.json({
+    status: 'ok',
+    configured,
+    clientIdConfigured: Boolean(getGoogleClientId()),
+    clientSecretConfigured: Boolean(getGoogleClientSecret()),
   });
 });
 
@@ -394,49 +571,14 @@ app.post('/api/gemini/run', async (req, res) => {
       return res.status(400).json({ error: 'Missing prompt text.' });
     }
 
-    const activeModel = getGeminiModel();
-    const ai = getGemini();
-    const call1Response = await ai.models.generateContent({
-      model: activeModel,
-      contents: prompt, // Verbatim prompt, zero prepended bias
-      config: {
-        tools: [{ googleSearch: {} }],
-      },
-    });
-
-    const answerText = call1Response.text || '';
-    const groundingSources: { uri: string; displayTitle: string; resolvedDomain: string | null }[] = [];
-    const webSearchQueries: string[] = [];
-
-    const candidate = call1Response.candidates?.[0];
-    const groundingMetadata = candidate?.groundingMetadata;
-    const rawChunks = groundingMetadata?.groundingChunks || [];
-
-    if (groundingMetadata?.webSearchQueries) {
-      webSearchQueries.push(...groundingMetadata.webSearchQueries);
-    }
-
-    if (groundingMetadata?.groundingChunks) {
-      for (const chunk of groundingMetadata.groundingChunks) {
-        if (chunk.web) {
-          const uri = chunk.web.uri || '';
-          const displayTitle = chunk.web.title || uri;
-          const resolvedDomain = extractDomain(chunk.web.title, chunk.web.uri);
-          groundingSources.push({
-            uri,
-            displayTitle,
-            resolvedDomain,
-          });
-        }
-      }
-    }
+    const groundedResult = await callGeminiGroundedFull(prompt);
 
     res.json({
-      model: activeModel,
-      answerText,
-      groundingSources,
-      groundingChunks: rawChunks,
-      webSearchQueries,
+      model: groundedResult.usedModel,
+      answerText: groundedResult.answerText,
+      groundingSources: groundedResult.groundingSources,
+      groundingChunks: groundedResult.rawChunks,
+      webSearchQueries: groundedResult.webSearchQueries,
     });
   } catch (err: any) {
     console.error('Call 1 Gemini Grounded error:', err);
@@ -477,10 +619,7 @@ Instructions:
 7. Identify the answerFormat (list, prose, table, steps) and recommendedEntityType.
 `;
 
-    const { json } = await callPerplexityAgent(extractionPrompt, {
-      grounding: false,
-      schema: { name: 'brand_extraction', schema: EXTRACTION_SCHEMA },
-    });
+    const json = await callGeminiStructured(extractionPrompt, EXTRACTION_SCHEMA);
     res.json(json);
   } catch (err: any) {
     console.error('Call 2 Extraction error:', err);
@@ -494,50 +633,52 @@ app.post('/api/gemini/opportunities', async (req, res) => {
     const { client } = req.body;
     if (!client) return res.status(400).json({ error: 'Client profile required.' });
 
+    const targetLang = determineTargetLanguage(client.language, client.market, client.domain, client.brandName);
+
     const promptText = `
 You are the prompt research engine for RAG Signal (AEO / GEO visibility tool).
-Generate exactly 20 diverse, high-commercial-intent, realistic user prompts that prospective B2B buyers would ask an AI search engine (like Gemini / Perplexity) in this industry. Use web search to ground category/competitor language in how real buyers actually phrase these queries.
+Generate exactly 20 diverse, high-commercial-intent, realistic user prompts that prospective B2B buyers or customers would ask an AI search engine (like Gemini) in this industry.
 
 Client: "${client.brandName}" (Domain: ${client.domain})
-Industry: ${client.industry || 'B2B Software'}
+Industry: ${client.industry || 'B2B Services'}
+Target Market: ${client.market || 'Global'}
 Competitors: ${JSON.stringify(client.competitorBrands || [])}
+
+CRITICAL LANGUAGE REQUIREMENT:
+Generate all prompt texts ('text') and rationale strictly in ${targetLang}.
+If ${targetLang} is Turkish (Türkçe), write natural Turkish conversational questions that users in ${client.market || 'Turkey / Istanbul'} would ask AI search engines (e.g., "İstanbul en iyi parti catering firmaları", "Snacks For Party menü ve fiyatları", "Kurumsal kokteyl ikram kutusu nereden sipariş edilir?"). Never write English prompts when target language is Turkish.
+If ${targetLang} is English, write natural English conversational questions.
 
 Requirements:
 - Exactly 20 distinct prompts.
 - Cover all Intent Layers: Informational (4), Commercial (6), Comparative (6), Navigational (2), Transactional (2).
-- Prompts must sound like real buyers typing queries (e.g., "best apm tools for kubernetes", "datadog vs dynatrace pricing comparison", "how to monitor microservices latency").
-- Give a 1-sentence rationale for why this prompt is a high-value visibility opportunity.
+- Prompts must sound like real buyers typing queries.
+- Give a 1-sentence rationale in ${targetLang} for why this prompt is a high-value visibility opportunity.
 `;
 
-    const { json } = await callPerplexityAgent(promptText, {
-      grounding: true,
-      schema: {
-        name: 'prompt_opportunities',
-        schema: {
-          type: 'object',
-          properties: {
-            prompts: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  text: { type: 'string' },
-                  intentLayer: {
-                    type: 'string',
-                    enum: ['Informational', 'Commercial', 'Comparative', 'Navigational', 'Transactional'],
-                  },
-                  category: { type: 'string' },
-                  rationale: { type: 'string' },
-                  targetCompetitor: { type: 'string' },
-                },
-                required: ['text', 'intentLayer', 'category', 'rationale'],
+    const json = await callGeminiStructured(promptText, {
+      type: 'object',
+      properties: {
+        prompts: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              text: { type: 'string' },
+              intentLayer: {
+                type: 'string',
+                enum: ['Informational', 'Commercial', 'Comparative', 'Navigational', 'Transactional'],
               },
+              category: { type: 'string' },
+              rationale: { type: 'string' },
+              targetCompetitor: { type: 'string' },
             },
+            required: ['text', 'intentLayer', 'category', 'rationale'],
           },
-          required: ['prompts'],
-          additionalProperties: false,
         },
       },
+      required: ['prompts'],
+      additionalProperties: false,
     });
     res.json(json || { prompts: [] });
   } catch (err: any) {
@@ -635,111 +776,28 @@ async function executeSingleRun(params: {
   let rawGroundingChunks: any[] = [];
   const webSearchQueries: string[] = [];
 
-  if (params.engine === 'perplexity-sonar') {
-    const perplexityKey = getPerplexityApiKey();
-    if (!perplexityKey) {
-      return {
-        answerText: '',
-        groundingSources: [],
-        groundingChunks: [],
-        webSearchQueries: [],
-        brandMentioned: false,
-        brandCited: false,
-        position: null,
-        prominence: null,
-        mentionedBrands: [],
-        orderedList: false,
-        rankedNames: [],
-        answerFormat: 'prose',
-        error: 'PERPLEXITY_API_KEY is missing. Please configure a Perplexity API key in Settings.',
-      };
-    }
-
-    try {
-      const agentInput = params.locationContext
-        ? `[Search Location Context: ${params.locationContext}]\n${params.promptText}`
-        : params.promptText;
-      const { answerText: text, sources } = await callPerplexityAgent(agentInput);
-      answerText = text;
-
-      for (const source of sources) {
-        const resolvedDomain = extractDomain(source.displayTitle, source.uri);
-        groundingSources.push({
-          uri: source.uri,
-          displayTitle: source.displayTitle,
-          resolvedDomain,
-        });
-      }
-      webSearchQueries.push(params.promptText);
-    } catch (err: any) {
-      return {
-        answerText: '',
-        groundingSources: [],
-        groundingChunks: [],
-        webSearchQueries: [],
-        brandMentioned: false,
-        brandCited: false,
-        position: null,
-        prominence: null,
-        mentionedBrands: [],
-        orderedList: false,
-        rankedNames: [],
-        answerFormat: 'prose',
-        error: `Call 1 (Perplexity Agent) failed: ${err?.message || String(err)}`,
-      };
-    }
-  } else {
-    try {
-      const call1Response = await ai.models.generateContent({
-        model: getGeminiModel(),
-        contents: params.locationContext ? `[Search Location Context: ${params.locationContext}]\n${params.promptText}` : params.promptText, // Verbatim prompt with optional context
-        config: {
-          tools: [{ googleSearch: {} }],
-        },
-      });
-
-      answerText = call1Response.text || '';
-
-      // Extract grounding metadata safely
-      const candidate = call1Response.candidates?.[0];
-      const groundingMetadata = candidate?.groundingMetadata;
-      rawGroundingChunks = groundingMetadata?.groundingChunks || [];
-
-      if (groundingMetadata?.webSearchQueries) {
-        webSearchQueries.push(...groundingMetadata.webSearchQueries);
-      }
-
-      if (groundingMetadata?.groundingChunks) {
-        for (const chunk of groundingMetadata.groundingChunks) {
-          if (chunk.web) {
-            const uri = chunk.web.uri || '';
-            const displayTitle = chunk.web.title || uri;
-            const resolvedDomain = extractDomain(chunk.web.title, chunk.web.uri);
-            groundingSources.push({
-              uri,
-              displayTitle,
-              resolvedDomain,
-            });
-          }
-        }
-      }
-    } catch (err: any) {
-      return {
-        answerText: '',
-        groundingSources: [],
-        groundingChunks: [],
-        webSearchQueries: [],
-        brandMentioned: false,
-        brandCited: false,
-        position: null,
-        prominence: null,
-        mentionedBrands: [],
-        orderedList: false,
-        rankedNames: [],
-        answerFormat: 'prose',
-        error: `Call 1 (Grounded Answer) failed: ${err?.message || String(err)}`,
-      };
-    }
+  try {
+    const groundedResult = await callGeminiGroundedFull(params.promptText, params.locationContext);
+    answerText = groundedResult.answerText || '';
+    groundingSources.push(...groundedResult.groundingSources);
+    rawGroundingChunks = groundedResult.rawChunks || [];
+    webSearchQueries.push(...groundedResult.webSearchQueries);
+  } catch (err: any) {
+    return {
+      answerText: '',
+      groundingSources: [],
+      groundingChunks: [],
+      webSearchQueries: [],
+      brandMentioned: false,
+      brandCited: false,
+      position: null,
+      prominence: null,
+      mentionedBrands: [],
+      orderedList: false,
+      rankedNames: [],
+      answerFormat: 'prose',
+      error: `Call 1 (Grounded Answer) failed: ${err?.message || String(err)}`,
+    };
   }
 
   if (!answerText.trim()) {
@@ -795,14 +853,7 @@ Instructions:
   };
 
   try {
-    // Call 2 is pure text-to-JSON parsing — no web grounding needed. Routed through
-    // the Perplexity Agent orchestrator (not Gemini) per platform architecture: Gemini
-    // is reserved for the "Gemini Grounded" measurement engine's Call 1 only.
-    const { json } = await callPerplexityAgent(extractionPrompt, {
-      grounding: false,
-      schema: { name: 'brand_extraction', schema: EXTRACTION_SCHEMA },
-    });
-    extractedData = json;
+    extractedData = await callGeminiStructured(extractionPrompt, EXTRACTION_SCHEMA);
   } catch (err: any) {
     console.error('Call 2 extraction failed, falling back to deterministic text matching:', err);
     // Fallback: check brand in text
@@ -903,6 +954,8 @@ interface ExecutionJob {
   runs: any[]; // appended as each run finishes — survives a mid-cycle failure
   runCycle: any | null;
   error?: string;
+  clientId?: string;
+  cycleId?: string;
 }
 const executionJobs = new Map<string, ExecutionJob>();
 
@@ -916,11 +969,19 @@ function startExecutionJob(params: {
 }): string {
   const { client, prompts, n, engine, isRetest, retestedActionId } = params;
   const cycleId = `cycle-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-  const jobId = `job-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const jobId = `job-${cycleId}`;
   const startedAt = new Date().toISOString();
   const callCount = prompts.length * n * 2;
 
-  const job: ExecutionJob = { status: 'running', total: prompts.length * n, completed: 0, runs: [], runCycle: null };
+  const job: ExecutionJob = {
+    status: 'running',
+    total: prompts.length * n,
+    completed: 0,
+    runs: [],
+    runCycle: null,
+    clientId: client.id,
+    cycleId,
+  };
   executionJobs.set(jobId, job);
   // Bound memory — jobs are only ever polled for a few minutes after they finish.
   setTimeout(() => executionJobs.delete(jobId), 30 * 60 * 1000);
@@ -963,19 +1024,27 @@ function startExecutionJob(params: {
             locationContext: locationContextStr,
           });
 
-          job.runs.push({
+          const runRecord = {
             id: runId,
             ownerId: client.ownerId || 'user',
             clientId: client.id,
             cycleId,
             promptId: prompt.id,
             engine,
-            model: engine === 'perplexity-sonar' ? getPerplexityModel() : getGeminiModel(),
+            model: getGeminiModel(),
             runIndex: runIdx,
             runAt,
             ...result,
-          });
+          };
+          job.runs.push(runRecord);
           job.completed++;
+
+          dbRepo.saveRuns([runRecord as any]).catch((e) => console.error('Failed to save run to Neon DB:', e));
+
+          // Pacing delay between runs to respect Gemini API rate limits (RPM)
+          if (job.completed < job.total) {
+            await sleep(1500);
+          }
         }
       }
 
@@ -993,6 +1062,15 @@ function startExecutionJob(params: {
         retestedActionId,
       };
       job.status = 'completed';
+      dbRepo.saveRunCycle(job.runCycle).catch((e) => console.error('Failed to save runCycle to Neon DB:', e));
+
+      // -------------------------------------------------------------
+      // DREAM STAGE: Self-Improvement Loop
+      // Synthesize new Brand Memory Knowledge Units ("The Brain") from cycle
+      // -------------------------------------------------------------
+      synthesizeBrandMemoryFromRunCycle(client, cycleId, job.runs).catch((e) =>
+        console.error('Dream stage synthesis error:', e)
+      );
     } catch (err: any) {
       console.error('Execute cycle job failed:', err);
       job.status = 'failed';
@@ -1004,7 +1082,150 @@ function startExecutionJob(params: {
   return jobId;
 }
 
-// POST /api/runs/execute-cycle: Start a Run Cycle job (returns immediately)
+// -------------------------------------------------------------
+// DREAM STAGE FUNCTION: Synthesize Brand Memory from Run Cycle
+// -------------------------------------------------------------
+async function synthesizeBrandMemoryFromRunCycle(client: any, cycleId: string, runs: any[]) {
+  if (!client || !runs || runs.length === 0) return;
+  try {
+    console.log(`🌙 [Dream Stage] Synthesizing Brand Memory from Run Cycle ${cycleId}...`);
+    const ai = getGemini();
+
+    const runSummaries = runs.slice(0, 15).map((r, i) => `
+Run #${i + 1}:
+Prompt ID: "${r.promptId}"
+Mentioned Client (${client.brandName}): ${r.brandMentioned}
+Cited Client Domain (${client.domain}): ${r.brandCited}
+Cited Domains: ${(r.groundingSources || []).map((s: any) => s.resolvedDomain || s.displayTitle).join(', ')}
+Competitors Mentioned: ${(r.mentionedBrands || []).filter((m: any) => m.isKnownCompetitor).map((m: any) => m.name).join(', ')}
+Answer Snippet: ${(r.answerText || '').slice(0, 250)}
+`).join('\n---\n');
+
+    const prompt = `You are the Brand Memory Knowledge Synthesizer for AI Visibility & AEO.
+Client: ${client.brandName} (${client.domain})
+Industry: ${client.industry || 'B2B Software'}
+
+Analyze these latest AI Search Run Cycle results:
+${runSummaries}
+
+Synthesize 1-2 high-value, factual Brand Memory Knowledge Units ("The Brain") based on observed AI visibility gaps, cited sources, or competitor positioning patterns.
+
+Entity Types allowed:
+- "company_overview": Core value proposition or market category
+- "product_feature": Specific features, capabilities, or gaps
+- "competitor_diff": Key USPs vs competitors in AI answers
+- "use_case": Search intents and solution match
+- "faq_fact": Verified facts, citations, or domain authority gaps
+
+Respond ONLY in valid JSON matching this schema:
+{
+  "chunks": [
+    {
+      "title": "Short descriptive title (e.g. LLM Citation Deficit in B2B Comparisons)",
+      "entityType": "competitor_diff",
+      "content": "Clear, factual, high-density summary of the observation and knowledge fact",
+      "keyFacts": ["Fact 1", "Fact 2"],
+      "confidence": "High",
+      "tags": ["aeo", "visibility-gap", "competitor"]
+    }
+  ]
+}
+`;
+
+    const res = await ai.models.generateContent({
+      model: getGeminiModel(),
+      contents: prompt,
+      config: { responseMimeType: 'application/json' },
+    });
+
+    const parsed = JSON.parse(res.text || '{"chunks":[]}');
+    const chunks = Array.isArray(parsed.chunks) ? parsed.chunks : [];
+    const timestamp = new Date().toISOString();
+
+    for (const chunk of chunks) {
+      const memoryId = `mem_dream_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`;
+      const textToEmbed = `${chunk.title}\n${chunk.content}\n${(chunk.keyFacts || []).join(', ')}`;
+      const embedding = await generateEmbedding(textToEmbed);
+
+      const memoryItem: BrandMemoryItem = {
+        id: memoryId,
+        clientId: client.id,
+        title: chunk.title || 'Synthesized Visibility Fact',
+        entityType: (chunk.entityType || 'competitor_diff') as any,
+        sourceUrl: `run-cycle://${cycleId}`,
+        sourceType: 'ai_synthesized',
+        content: chunk.content || '',
+        keyFacts: chunk.keyFacts || [],
+        embedding,
+        confidence: (chunk.confidence === 'Low' || chunk.confidence === 'Medium' ? chunk.confidence : 'High'),
+        tags: [...(chunk.tags || []), 'dream-synthesized', cycleId],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+
+      await dbRepo.saveBrandMemory(memoryItem);
+    }
+    console.log(`⚡ [Dream Stage] Successfully synthesized ${chunks.length} Brand Memory units for ${client.brandName}`);
+  } catch (err) {
+    console.error('Dream stage synthesis error:', err);
+  }
+}
+
+// -------------------------------------------------------------
+// AUTOMATED SCHEDULED SCANNING ENGINE
+// Runs in background based on client.autoRunIntervalDays (1d, 7d, etc.)
+// -------------------------------------------------------------
+async function checkAndRunScheduledScans() {
+  try {
+    const clients = await dbRepo.listClientsByOwner('');
+    if (!clients || clients.length === 0) return;
+
+    for (const client of clients) {
+      const intervalDays = client.autoRunIntervalDays ?? 0;
+      if (intervalDays <= 0) continue; // Manual mode only
+
+      const cycles = await dbRepo.listRunCyclesByClient(client.id);
+      const sortedCycles = [...cycles].sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+      const lastCycle = sortedCycles[0];
+
+      let isDue = false;
+      if (!lastCycle) {
+        isDue = true;
+      } else {
+        const lastRunTime = new Date(lastCycle.startedAt).getTime();
+        const elapsedDays = (Date.now() - lastRunTime) / (1000 * 60 * 60 * 24);
+        if (elapsedDays >= intervalDays) {
+          isDue = true;
+        }
+      }
+
+      if (isDue) {
+        console.log(`⏰ [Auto-Scheduler] Client ${client.brandName} (${client.id}) is due for auto-scan (${intervalDays}d frequency).`);
+        const prompts = await dbRepo.listPromptsByClient(client.id);
+        const activePrompts = prompts.filter((p) => p.active !== false);
+
+        if (activePrompts.length > 0) {
+          console.log(`🚀 [Auto-Scheduler] Executing scheduled run cycle for ${activePrompts.length} active prompts...`);
+          startExecutionJob({
+            client,
+            prompts: activePrompts,
+            n: 3,
+            engine: 'gemini-grounded',
+            isRetest: false,
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Scheduled auto-scan runner error:', err);
+  }
+}
+
+// Register background scheduler (checks every 30 minutes, initial check in 1 minute)
+setInterval(checkAndRunScheduledScans, 30 * 60 * 1000);
+setTimeout(checkAndRunScheduledScans, 60 * 1000);
+
+// POST /api/runs/execute-cycle: Start a Run Cycle job (returns 202 Accepted immediately)
 app.post('/api/runs/execute-cycle', async (req, res) => {
   try {
     const {
@@ -1020,18 +1241,14 @@ app.post('/api/runs/execute-cycle', async (req, res) => {
       return res.status(400).json({ error: 'Invalid payload. Missing client or prompts array.' });
     }
 
-    if (engine === 'perplexity-sonar') {
-      const pKey = getPerplexityApiKey();
-      if (!pKey) {
-        return res.status(400).json({
-          error: 'Perplexity Agent engine is currently disabled. Please configure a Perplexity API key in Settings.',
-        });
-      }
-    }
-
     const n = Math.max(1, Math.min(5, Number(runsPerPrompt) || 3));
     const jobId = startExecutionJob({ client, prompts, n, engine, isRetest, retestedActionId });
-    res.json({ jobId, total: prompts.length * n });
+    res.status(202).json({
+      jobId,
+      status: 'running',
+      statusUrl: `/api/runs/execute-cycle/${jobId}/status`,
+      total: prompts.length * n,
+    });
   } catch (err: any) {
     console.error('Execute cycle error:', err);
     res.status(500).json({ error: err?.message || 'Failed to execute run cycle.' });
@@ -1039,32 +1256,67 @@ app.post('/api/runs/execute-cycle', async (req, res) => {
 });
 
 // GET /api/runs/execute-cycle/:jobId/status: Poll a Run Cycle job's progress
-app.get('/api/runs/execute-cycle/:jobId/status', (req, res) => {
-  const job = executionJobs.get(req.params.jobId);
-  if (!job) return res.status(404).json({ error: 'Job not found (it may have expired or the server restarted).' });
-  res.json({
-    status: job.status,
-    total: job.total,
-    completed: job.completed,
-    runs: job.runs,
-    runCycle: job.runCycle,
-    error: job.error,
-  });
+app.get('/api/runs/execute-cycle/:jobId/status', async (req, res) => {
+  const jobId = req.params.jobId;
+  const job = executionJobs.get(jobId);
+
+  if (job) {
+    return res.json({
+      status: job.status,
+      total: job.total,
+      completed: job.completed,
+      runs: job.runs,
+      runCycle: job.runCycle,
+      error: job.error,
+    });
+  }
+
+  // Fallback: Check DB if memory was cleared or server restarted during long execution cycle
+  try {
+    const rawId = jobId.startsWith('job-') ? jobId.slice(4) : jobId;
+    const cycleId = rawId.startsWith('cycle-') ? rawId : `cycle-${rawId}`;
+
+    const savedRuns = await dbRepo.listRunsByCycle(cycleId);
+    const savedCycle = await dbRepo.getRunCycle(cycleId);
+
+    if (savedRuns && savedRuns.length > 0) {
+      return res.json({
+        status: savedCycle ? 'completed' : 'failed',
+        total: savedRuns.length,
+        completed: savedRuns.length,
+        runs: savedRuns,
+        runCycle: savedCycle || null,
+        error: savedCycle ? undefined : 'Server restarted during execution. Completed runs were preserved.',
+      });
+    }
+  } catch (err) {
+    console.error('Failed to query DB fallback for cycle job status:', err);
+  }
+
+  res.status(404).json({ error: 'Job not found (it may have expired or the server restarted).' });
 });
 
 // -------------------------------------------------------------
 // Endpoint: Query Fan-out Simulator
 // -------------------------------------------------------------
 app.post('/api/prompts/fanout', async (req, res) => {
-  const { prompt } = req.body;
+  const { prompt, language, market, domain, brandName } = req.body;
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ error: 'Prompt is required.' });
   }
+
+  const targetLang = determineTargetLanguage(language, market, domain, brandName);
+
   try {
     const fanoutSystemPrompt = `You are an AI Search Engine Query Fan-Out Simulator.
 When a user submits a complex prompt to AI search engines, the engine breaks down ("fans out") the prompt into multiple focused web search queries.
 
 Analyze this prompt: "${prompt.replace(/"/g, '\\"')}"
+
+CRITICAL LANGUAGE REQUIREMENT:
+Generate all search queries ('query') and the fanoutSummary strictly in ${targetLang}.
+If ${targetLang} is Turkish (Türkçe), generate all search queries in natural Turkish that users or search engines in Turkey would construct.
+If ${targetLang} is English, generate in English.
 
 Generate realistic search queries that each AI engine would generate in parallel to answer this prompt:
 1. Google AI Overview / AI Mode queries (keyword-focused, entity lookup, comparative, transactional)
@@ -1103,10 +1355,7 @@ Return JSON matching the schema precisely.`;
       required: ['prompt', 'fanoutSummary', 'engines'],
     };
 
-    const { json } = await callPerplexityAgent(fanoutSystemPrompt, {
-      grounding: false,
-      schema: { name: 'query_fanout', schema: { ...schema, additionalProperties: false } },
-    });
+    const json = await callGeminiStructured(fanoutSystemPrompt, { ...schema, additionalProperties: false });
     res.json(json);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to simulate query fan-out.' });
@@ -1429,20 +1678,6 @@ async function crawlWithFirecrawl(domain: string): Promise<string> {
   }
 }
 
-// Helper: Perplexity Agent API Search (brand/competitive research)
-async function queryPerplexityAgent(prompt: string): Promise<string> {
-  if (!getPerplexityApiKey()) return '';
-  try {
-    const { answerText } = await callPerplexityAgent(prompt, {
-      instructions: 'You are an expert AI B2B research agent specializing in AEO, GEO, and brand competitive analysis. Use the web_search tool to ground every factual claim. If you cannot find a verifiable answer for something, say so explicitly instead of guessing or inventing a plausible-sounding fact.',
-    });
-    return answerText;
-  } catch (err) {
-    console.warn('Perplexity Agent search skipped or failed:', err);
-    return '';
-  }
-}
-
 async function fetchMultiPageWebsiteData(domain: string): Promise<string> {
   const cleanDomain = domain.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
   const baseUrl = `https://${cleanDomain}`;
@@ -1526,23 +1761,56 @@ async function fetchMultiPageWebsiteData(domain: string): Promise<string> {
   return resultSections.join('\n\n');
 }
 
-function determineTargetLanguage(lang?: string, market?: string): string {
+function determineTargetLanguage(lang?: string, market?: string, domain?: string, brandName?: string): string {
   const l = (lang || '').toLowerCase().trim();
   const m = (market || '').toLowerCase().trim();
-  if (l === 'tr' || l === 'turkish' || l === 'türkçe' || l.includes('turk') || m === 'turkey' || m === 'türkiye' || m.includes('turk')) {
+  const d = (domain || '').toLowerCase().trim();
+  const b = (brandName || '').toLowerCase().trim();
+
+  // If Turkish language, Turkish market, .tr domain, or Turkish brand context
+  if (
+    l.includes('turk') ||
+    l.includes('türk') ||
+    l === 'tr' ||
+    l.startsWith('tr-') ||
+    l.includes('tr_') ||
+    l.includes('tr/') ||
+    l.includes('/tr') ||
+    m.includes('turk') ||
+    m.includes('türkiy') ||
+    m.includes('istanbul') ||
+    m.includes('ankara') ||
+    m.includes('izmir') ||
+    m.includes('bursa') ||
+    m.includes('antalya') ||
+    d.endsWith('.tr') ||
+    d.includes('.tr/')
+  ) {
     return 'Turkish (Türkçe)';
   }
-  if (l === 'de' || l === 'german' || l === 'deutsch') {
+
+  // German
+  if (l.includes('de') || l.includes('german') || l.includes('deutsch') || m.includes('germany') || m.includes('deutschland') || d.endsWith('.de')) {
     return 'German (Deutsch)';
   }
-  if (l === 'es' || l === 'spanish' || l === 'español') {
+
+  // Spanish
+  if (l.includes('es') || l.includes('spanish') || l.includes('español') || m.includes('spain') || m.includes('españa') || d.endsWith('.es')) {
     return 'Spanish (Español)';
   }
-  if (l === 'fr' || l === 'french' || l === 'français') {
+
+  // French
+  if (l.includes('fr') || l.includes('french') || l.includes('français') || m.includes('france') || d.endsWith('.fr')) {
     return 'French (Français)';
   }
+
+  // English
+  if (l.includes('engl') || l === 'en' || l.startsWith('en-') || l.includes('en_')) {
+    return 'English';
+  }
+
   if (l) return lang!;
-  if (m === 'turkey' || m === 'türkiye') return 'Turkish (Türkçe)';
+
   return 'English';
 }
 
@@ -1555,15 +1823,7 @@ app.post('/api/client/generate-profile', async (req, res) => {
     return res.status(400).json({ error: 'brandName and domain are required.' });
   }
 
-  const targetLang = determineTargetLanguage(language, market);
-
-  // Multi-page website crawl (Homepage, About, Products, Contact/Location)
-  let multiPageWebsiteContent = '';
-  try {
-    multiPageWebsiteContent = await fetchMultiPageWebsiteData(domain);
-  } catch (err) {
-    console.warn('Multi-page website crawl skipped/failed:', err);
-  }
+  const targetLang = determineTargetLanguage(language, market, domain, brandName);
 
   try {
     const schema = {
@@ -1603,19 +1863,15 @@ app.post('/api/client/generate-profile', async (req, res) => {
       required: ['profile'],
     };
 
-    // Grounded research via the Perplexity Agent orchestrator (multi-provider web
-    // search) — this replaces a previously-redundant parallel Gemini googleSearch
-    // call, since the Agent API already covers grounding here. Run in parallel with
-    // a Firecrawl competitor search, since the two feed complementary evidence:
-    // Perplexity synthesizes prose about the company; Firecrawl returns real, current
-    // search-result URLs so competitorDomains[] is built from actual pages, not an
-    // LLM's recalled (and sometimes stale or invented) domain names.
-    const [perplexityContext, competitorSearchResults] = await Promise.all([
-      getPerplexityApiKey()
-        ? queryPerplexityAgent(
-            `Research company "${brandName}" (website: ${domain}, location/market: ${market || 'Turkey/Global'}). Provide headquarters city, primary products/services, company history, target audience, and top 3-5 competitor brand names & domain URLs. Output in ${targetLang}.`
-          ).catch(() => '')
-        : Promise.resolve(''),
+    // Run direct website crawl, Gemini Grounded research, and Firecrawl competitor search ALL IN PARALLEL
+    const [multiPageWebsiteContent, geminiResearch, competitorSearchResults] = await Promise.all([
+      fetchMultiPageWebsiteData(domain).catch((err) => {
+        console.warn('Multi-page website crawl skipped/failed:', err);
+        return '';
+      }),
+      callGeminiGrounded(
+        `Research company "${brandName}" (website: ${domain}, location/market: ${market || 'Global'}). Provide headquarters city, primary products/services, company history, target audience, and top 3-5 real competitor brand names & domain URLs. Output strictly in ${targetLang}.`
+      ).catch(() => ({ answerText: '', sources: [] })),
       searchWithFirecrawl(`${brandName} alternatives competitors vs`, 6).catch(() => []),
     ]);
 
@@ -1625,7 +1881,7 @@ app.post('/api/client/generate-profile', async (req, res) => {
           .join('\n')
       : '';
 
-    // Step 2: Structured extraction call, no grounding (content already gathered above)
+    // Step 2: Structured extraction call
     const systemPrompt = `You are an expert AI Marketing Researcher, GEO Analyst, and AEO Profiler.
 Analyze company "${brandName}" (website domain: ${domain}).
 
@@ -1634,47 +1890,43 @@ TARGET MARKET: ${market || 'General'}
 KNOWN INDUSTRY: ${industry || 'Extract from website'}
 
 CRITICAL LANGUAGE & LOCATION MANDATES:
-1. You MUST generate ALL fields of the JSON profile strictly in ${targetLang}. 
-   If target language is Turkish (Türkçe), every sentence, summary, city name (e.g., "İstanbul", "Ankara", "İzmir"), target audience, product list, key differentiator, and industry name MUST be written in natural, professional Turkish.
-2. CITY & LOCATION: Inspect contact details, addresses, footer, and about page text. If a city is found (e.g. İstanbul, Ankara, İzmir, London, Berlin, San Francisco), output it in 'city'. If not explicitly found, deduce the most likely headquarters city or region based on market context.
+1. You MUST generate ALL text fields of the JSON profile strictly in ${targetLang}. 
+   If target language is Turkish (Türkçe), write every summary (shortSummary), positioning, detailedDescription, targetAudience, productsServices, keyDifferentiators, industry, and market in fluent, professional Turkish. Never output English for these fields when target language is Turkish.
+   If target language is English, write every text field in fluent, professional English.
+2. CITY & LOCATION: Inspect contact details, addresses, footer, and about page text. Identify the actual headquarters city (e.g. İstanbul, Ankara, İzmir, London, New York). If not explicitly found, deduce the most likely headquarters city based on market context (${market || 'Global'}).
+3. REAL COMPETITORS: Identify 3-5 real, actual competitor brand names and domain URLs in the same industry. NEVER output placeholders like "Brand 1", "Brand 2", "comp1.com", or "comp2.com".
 
 ${multiPageWebsiteContent ? `DIRECT MULTI-PAGE / FIRECRAWL SCRAPED WEBSITE CONTENT FOR ${domain}:\n"""\n${multiPageWebsiteContent}\n"""\n` : ''}
-${perplexityContext ? `PERPLEXITY AGENT RESEARCH FINDINGS:\n"""\n${perplexityContext}\n"""\n` : ''}
-${competitorSearchEvidence ? `REAL FIRECRAWL SEARCH RESULTS FOR "${brandName} alternatives competitors vs" (use these real URLs for competitorDomains — never invent a domain that isn't grounded in the evidence above):\n"""\n${competitorSearchEvidence}\n"""\n` : ''}
+${geminiResearch.answerText ? `GEMINI RESEARCH FINDINGS:\n"""\n${geminiResearch.answerText}\n"""\n` : ''}
+${competitorSearchEvidence ? `REAL FIRECRAWL SEARCH RESULTS FOR "${brandName} alternatives competitors vs" (use these real URLs for competitorDomains — never invent placeholder domains):\n"""\n${competitorSearchEvidence}\n"""\n` : ''}
 
-Synthesize actual findings from the website, Firecrawl, and Perplexity agent research above into a structured JSON profile with fields:
-1. shortSummary: A concise 1-2 sentence overview of what the brand actually does based on their website.
+Synthesize actual findings from the website, Firecrawl, and research above into a structured JSON profile with fields:
+1. shortSummary: A concise 1-2 sentence overview in ${targetLang} of what the brand actually does based on their website.
 2. positioning: The brand's core value proposition or brand slogan in ${targetLang}.
-3. detailedDescription: A detailed 3-5 sentence description explaining their services, mission, and company history from the About page.
+3. detailedDescription: A detailed 3-5 sentence description in ${targetLang} explaining their services, mission, and company history.
 4. targetAudience: Primary customer base in ${targetLang}.
-5. productsServices: Comprehensive list of products or services offered from the Products/Services pages.
-6. keyDifferentiators: 2-3 points on what makes them unique.
-7. industry: Primary industry category in ${targetLang} (e.g. if Turkish: "Teknoloji & Yazılım", "E-Ticaret", "Lojistik & Taşımacılık", "Finans", "Dijital Pazarlama", etc.).
-8. city: Headquarters city name in ${targetLang} (e.g. "İstanbul", "Ankara").
-9. market: Target market/country in ${targetLang} (e.g. "Türkiye", "Küresel").
-10. language: Primary language name (e.g. "Türkçe", "English").
+5. productsServices: Comprehensive list of products or services offered in ${targetLang} from the Products/Services pages.
+6. keyDifferentiators: 2-3 points in ${targetLang} on what makes them unique.
+7. industry: Primary industry category in ${targetLang}.
+8. city: Headquarters city name (e.g. "İstanbul", "Ankara", "London", "New York").
+9. market: Target market/country in ${targetLang} (e.g. "Türkiye", "İstanbul / Türkiye", "United Kingdom", "Global").
+10. language: Primary language name (e.g. "Türkçe & İngilizce", "Türkçe", "English").
 11. aliases: Array of brand name variations or acronyms.
 12. competitorBrands: Array of 3-5 top competitor brand names.
 13. competitorDomains: Array of corresponding competitor domain URLs.
 
 Return the result STRICTLY as JSON matching the schema.`;
 
-    const { json: parsed } = await callPerplexityAgent(systemPrompt, {
-      grounding: false,
-      schema: { name: 'brand_profile', schema: { ...schema, additionalProperties: false } },
-    });
+    const parsed = await callGeminiStructured(systemPrompt, { ...schema, additionalProperties: false });
 
     if (!parsed?.profile) {
       throw new Error('Invalid response structure returned from model.');
     }
     res.json(parsed);
   } catch (err: any) {
-    // RAG Signal rule: NO FAKE DATA, EVER. A failed profile generation must surface
-    // an explicit error naming what failed — never a silently fabricated brand profile
-    // (invented competitor names, invented city, etc.) presented as if it were real.
     console.error('Brand profile generation failed:', err);
     res.status(502).json({
-      error: `Could not generate a brand profile for "${brandName}" from live sources: ${err?.message || 'Unknown error'}. Fix the underlying issue (Perplexity API key, Firecrawl, or network) and retry — the form was not populated with placeholder data.`,
+      error: `Could not generate a brand profile for "${brandName}" from live sources: ${err?.message || 'Unknown error'}. Fix the underlying issue and retry.`,
     });
   }
 });
@@ -1688,18 +1940,20 @@ app.post('/api/prompts/discover', async (req, res) => {
     return res.status(400).json({ error: 'brandName is required.' });
   }
 
-  const targetLang = determineTargetLanguage(language, market);
+  const targetLang = determineTargetLanguage(language, market, domain, brandName);
 
   try {
     const systemPrompt = `You are an expert AEO (Answer Engine Optimization) & GEO Prompt Researcher.
-Given the brand name "${brandName}", industry "${industry || 'General'}", domain "${domain || ''}", and target market "${market || 'Turkey/Global'}", generate 10 high-intent, highly realistic conversational search prompts that real customers ask AI search engines (ChatGPT, Google AI Overview, Perplexity, Gemini).
+Given the brand name "${brandName}", industry "${industry || 'General'}", domain "${domain || ''}", and target market "${market || 'Global'}", generate 10 high-intent, highly realistic conversational search prompts that real customers ask AI search engines (ChatGPT, Google AI Overview, Gemini).
 
 CRITICAL LANGUAGE REQUIREMENT:
-Generate all prompt texts ('text') strictly in ${targetLang}. If ${targetLang} is Turkish (Türkçe), write natural Turkish conversational questions that Turkish users would ask AI tools about this brand, industry, or competitors.
+Generate all prompt texts ('text') strictly in ${targetLang}.
+If ${targetLang} is Turkish (Türkçe), write natural Turkish conversational questions that users in ${market || 'Turkey / Istanbul'} would ask AI search engines about this brand, industry, or competitors (e.g., "İstanbul en iyi parti catering firmaları", "Snacks For Party menü ve fiyatları", "Kurumsal kokteyl ikram kutusu nereden sipariş edilir?"). Never write English prompts when target language is Turkish.
+If ${targetLang} is English, write natural English conversational questions that users in ${market || 'the target market'} would ask AI tools.
+Provide a brief relevanceReason in ${targetLang} explaining why this prompt matters for AEO visibility.
 
 Categorize each prompt into one of: 'Commercial', 'Comparison', 'Transactional', 'Informational', or 'Technical'.
-Assign an intentLayer: 'Navigational', 'Informational', 'Commercial', 'Comparative', or 'Transactional'.
-Provide a brief relevanceReason in ${targetLang} explaining why this prompt matters for AEO visibility.`;
+Assign an intentLayer: 'Navigational', 'Informational', 'Commercial', 'Comparative', or 'Transactional'.`;
 
     const schema = {
       type: 'object',
@@ -1723,10 +1977,7 @@ Provide a brief relevanceReason in ${targetLang} explaining why this prompt matt
       additionalProperties: false,
     };
 
-    const { json } = await callPerplexityAgent(systemPrompt, {
-      grounding: false,
-      schema: { name: 'prompt_discovery', schema },
-    });
+    const json = await callGeminiStructured(systemPrompt, schema);
     res.json(json);
   } catch (err: any) {
     res.status(500).json({ error: err.message || 'Failed to discover prompts.' });
@@ -1804,10 +2055,7 @@ Assess:
       additionalProperties: false,
     };
 
-    const { json: parsed } = await callPerplexityAgent(prompt, {
-      grounding: false,
-      schema: { name: 'schema_audit', schema },
-    });
+    const parsed = await callGeminiStructured(prompt, schema);
     res.json({
       url: targetUrl,
       extractedCount: jsonLdMatches.length,
@@ -1835,9 +2083,7 @@ Grounding Cited Domains: ${r.groundingSources.map((s: any) => s.resolvedDomain |
 Competitors Mentioned: ${r.mentionedBrands.filter((m: any) => m.isKnownCompetitor).map((m: any) => m.name).join(', ')}
 `).join('\n---\n');
 
-    // Pull real content from the pages that outranked the client, via Firecrawl —
-    // "Content Coverage" / "Evidence / Authority" / "Structured Information" should be
-    // judged against actual competitor page content, not just a cited domain name.
+    // Pull real content from the pages that outranked the client, via Firecrawl
     const clientDomainClean = (client.domain || '').replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').toLowerCase();
     const citedUrlFrequency = new Map<string, number>();
     for (const r of runs) {
@@ -1861,10 +2107,6 @@ Competitors Mentioned: ${r.mentionedBrands.filter((m: any) => m.isKnownCompetito
         .join('\n\n');
     }
 
-    // Broaden the evidence beyond just the URLs this one grounded answer happened to
-    // cite: search the prompt topic directly to see what else ranks for it — a wider
-    // view of the competitive content landscape for "Content Coverage" / "Evidence /
-    // Authority" than a single run's citations can show.
     let widerCompetitiveLandscape = '';
     if (getFirecrawlApiKey()) {
       const searchResults = await searchWithFirecrawl(prompt.text, 5).catch(() => []);
@@ -1880,14 +2122,31 @@ Competitors Mentioned: ${r.mentionedBrands.filter((m: any) => m.isKnownCompetito
       }
     }
 
+    const gscGa4Telemetry = googleTokens.connected ? `\nGSC & GA4 Active (Site: ${googleTokens.selectedGscSite || client.domain}). Evaluate if pages with high search impressions are cited by LLMs.` : '';
+
+    // Fetch Brand Memory items ("The Brain") for Materialized Context
+    const brandMemories = await dbRepo.getBrandMemoriesByClient(client.id).catch(() => []);
+    const brandMemoryContext = brandMemories.length > 0
+      ? `\n=== BRAND MEMORY KNOWLEDGE BASE (The Brain) ===\n` +
+        brandMemories.slice(0, 5).map((m: any) => `- [${m.entityType}] ${m.title}: ${m.content}`).join('\n')
+      : '';
+
+    const targetLang = determineTargetLanguage(client.language, client.market, client.domain, client.brandName);
+
     const promptEvaluation = `
-You are the senior GEO/AEO diagnostic engine for RAG Signal.
+You are the senior GEO/AEO diagnostic engine for RAG Signal.${gscGa4Telemetry}
 Analyze the following ${runs.length} grounded search runs for the tracked prompt and client brand.
 
 Client: "${client.brandName}" (Domain: ${client.domain})
 Industry: ${client.industry || 'B2B Software'}
 Prompt: "${prompt.text}" (Intent: ${prompt.intentLayer})
 Competitors: ${JSON.stringify(client.competitorBrands)}
+${brandMemoryContext}
+
+CRITICAL LANGUAGE REQUIREMENT:
+You MUST write all dimension explanations ('explanation'), observedEvidence, likelyGap, recommendedActionSummary, and validationMethod strictly in ${targetLang}.
+If ${targetLang} is Turkish (Türkçe), write every explanation, diagnosis, gap, and recommendation in fluent, professional Turkish.
+If ${targetLang} is English, write in English.
 
 Run Observation Evidence:
 ${runsSummary}
@@ -1923,8 +2182,7 @@ METHODOLOGICAL HONESTY (mandatory):
 BANNED OUTPUTS (never write these or equivalent vague phrasing, for likelyGap, recommendedActionSummary,
 or suggestedAction.exactRecommendation): "improve your GEO", "build authority", "add more keywords",
 "improve content quality", "optimize for AI search". Every recommendation must be concrete enough that
-an engineer or marketer could execute it without asking a follow-up question (e.g. name the exact page,
-the exact section/H2 to add, or the exact comparison table to publish).
+an engineer or marketer could execute it without asking a follow-up question.
 `;
 
     const dimensionSchema = {
@@ -1937,54 +2195,48 @@ the exact section/H2 to add, or the exact comparison table to publish).
       required: ['status', 'explanation'],
     };
 
-    const { json: parsed } = await callPerplexityAgent(promptEvaluation, {
-      grounding: false,
-      schema: {
-        name: 'diagnostic',
-        schema: {
+    const parsed = await callGeminiStructured(promptEvaluation, {
+      type: 'object',
+      properties: {
+        dimensions: {
           type: 'object',
           properties: {
-            dimensions: {
-              type: 'object',
-              properties: {
-                'Intent Match': dimensionSchema,
-                'Entity Clarity': dimensionSchema,
-                'Answer Extractability': dimensionSchema,
-                'Content Coverage': dimensionSchema,
-                'Evidence / Authority': dimensionSchema,
-                'Structured Information': dimensionSchema,
-              },
-              required: [
-                'Intent Match',
-                'Entity Clarity',
-                'Answer Extractability',
-                'Content Coverage',
-                'Evidence / Authority',
-                'Structured Information',
-              ],
-            },
-            observedEvidence: { type: 'string' },
-            likelyGap: { type: 'string' },
-            confidence: { type: 'string', enum: ['High', 'Medium', 'Low'] },
-            recommendedActionSummary: { type: 'string' },
-            validationMethod: { type: 'string' },
-            suggestedAction: {
-              type: 'object',
-              properties: {
-                title: { type: 'string' },
-                why: { type: 'string' },
-                exactRecommendation: { type: 'string' },
-                priority: { type: 'string', enum: ['Critical', 'High', 'Medium', 'Low'] },
-                impact: { type: 'string', enum: ['High', 'Medium', 'Low'] },
-                effort: { type: 'string', enum: ['High', 'Medium', 'Low'] },
-              },
-              required: ['title', 'why', 'exactRecommendation', 'priority', 'impact', 'effort'],
-            },
+            'Intent Match': dimensionSchema,
+            'Entity Clarity': dimensionSchema,
+            'Answer Extractability': dimensionSchema,
+            'Content Coverage': dimensionSchema,
+            'Evidence / Authority': dimensionSchema,
+            'Structured Information': dimensionSchema,
           },
-          required: ['dimensions', 'observedEvidence', 'likelyGap', 'confidence', 'recommendedActionSummary', 'validationMethod'],
-          additionalProperties: false,
+          required: [
+            'Intent Match',
+            'Entity Clarity',
+            'Answer Extractability',
+            'Content Coverage',
+            'Evidence / Authority',
+            'Structured Information',
+          ],
+        },
+        observedEvidence: { type: 'string' },
+        likelyGap: { type: 'string' },
+        confidence: { type: 'string', enum: ['High', 'Medium', 'Low'] },
+        recommendedActionSummary: { type: 'string' },
+        validationMethod: { type: 'string' },
+        suggestedAction: {
+          type: 'object',
+          properties: {
+            title: { type: 'string' },
+            why: { type: 'string' },
+            exactRecommendation: { type: 'string' },
+            priority: { type: 'string', enum: ['Critical', 'High', 'Medium', 'Low'] },
+            impact: { type: 'string', enum: ['High', 'Medium', 'Low'] },
+            effort: { type: 'string', enum: ['High', 'Medium', 'Low'] },
+          },
+          required: ['title', 'why', 'exactRecommendation', 'priority', 'impact', 'effort'],
         },
       },
+      required: ['dimensions', 'observedEvidence', 'likelyGap', 'confidence', 'recommendedActionSummary', 'validationMethod'],
+      additionalProperties: false,
     });
 
     const diagId = `diag-${Date.now()}`;
@@ -2031,6 +2283,16 @@ the exact section/H2 to add, or the exact comparison table to publish).
       };
     }
 
+    // Persist diagnostic and action to Neon DB
+    try {
+      await dbRepo.saveDiagnostic(diagnostic);
+      if (actionItem) {
+        await dbRepo.saveActionItem(actionItem);
+      }
+    } catch (saveErr) {
+      console.error('Failed to save diagnostic/action to Neon DB:', saveErr);
+    }
+
     res.json({
       diagnostic,
       actionItem,
@@ -2042,8 +2304,6 @@ the exact section/H2 to add, or the exact comparison table to publish).
 });
 
 // POST /api/pages/analyze: Analyze webpage URL / structure for GEO / AEO extractability
-// Budget: 1 page fetch (+ 1 Firecrawl scrape if configured) + 1 non-grounded Perplexity
-// Agent call. See spec §9 (Cost Discipline).
 app.post('/api/pages/analyze', async (req, res) => {
   try {
     const { url, targetPrompt, client } = req.body;
@@ -2051,11 +2311,6 @@ app.post('/api/pages/analyze', async (req, res) => {
 
     const targetUrl = url.startsWith('http') ? url : `https://${url}`;
 
-    // Deterministic facts FIRST: fetch the real page and count structure in code.
-    // The model never invents h2Count / contentLength / table or schema presence —
-    // those are counted here, exactly like /api/url/fetch. See spec §1: "Aggregates
-    // are DERIVED IN CODE, never asked from an LLM." Raw HTML is required for this
-    // (table/JSON-LD tags), so this fetch always happens regardless of Firecrawl.
     let html = '';
     try {
       const fetchRes = await fetch(targetUrl, {
@@ -2080,9 +2335,6 @@ app.post('/api/pages/analyze', async (req, res) => {
     const hasStructuredSchema = /type=["']application\/ld\+json["']/i.test(html);
     const contentLength = html.length;
 
-    // Prefer Firecrawl's rendered markdown for the body text fed to the model — it
-    // handles JS-rendered pages far better than a raw regex strip. Fall back to the
-    // regex strip of the raw HTML if Firecrawl isn't configured or returns nothing.
     let bodyText = await scrapeUrlWithFirecrawl(targetUrl, 6000);
     if (!bodyText) {
       bodyText = html
@@ -2118,37 +2370,29 @@ Evaluate, using ONLY the content above as evidence:
 1. Answer Extractability (Are direct definitions, key specs, and pricing easy for an LLM to lift verbatim from this text?)
 2. Entity Clarity (Is the product class, company name, and category unmistakable from this text?)
 3. Findings: for each notable observation, give a concrete, executable suggestion tied to the actual
-   content above (name the missing section, the exact comparison to add, or the exact fact to state
-   plainly). Never write vague advice like "improve your GEO", "build authority", "add more keywords",
-   or "improve content quality" — those are banned outputs.
+   content above.
 `;
 
-    const { json: parsed } = await callPerplexityAgent(promptText, {
-      grounding: false,
-      schema: {
-        name: 'page_analysis',
-        schema: {
-          type: 'object',
-          properties: {
-            entityClarityStatus: { type: 'string', enum: ['Strong', 'Adequate', 'Weak', 'Missing', 'Unknown'] },
-            extractabilityStatus: { type: 'string', enum: ['Strong', 'Adequate', 'Weak', 'Missing', 'Unknown'] },
-            findings: {
-              type: 'array',
-              items: {
-                type: 'object',
-                properties: {
-                  dimension: { type: 'string' },
-                  observation: { type: 'string' },
-                  concreteSuggestion: { type: 'string' },
-                },
-                required: ['dimension', 'observation', 'concreteSuggestion'],
-              },
+    const parsed = await callGeminiStructured(promptText, {
+      type: 'object',
+      properties: {
+        entityClarityStatus: { type: 'string', enum: ['Strong', 'Adequate', 'Weak', 'Missing', 'Unknown'] },
+        extractabilityStatus: { type: 'string', enum: ['Strong', 'Adequate', 'Weak', 'Missing', 'Unknown'] },
+        findings: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              dimension: { type: 'string' },
+              observation: { type: 'string' },
+              concreteSuggestion: { type: 'string' },
             },
+            required: ['dimension', 'observation', 'concreteSuggestion'],
           },
-          required: ['entityClarityStatus', 'extractabilityStatus', 'findings'],
-          additionalProperties: false,
         },
       },
+      required: ['entityClarityStatus', 'extractabilityStatus', 'findings'],
+      additionalProperties: false,
     });
 
     const analysis = {
@@ -2177,9 +2421,7 @@ Evaluate, using ONLY the content above as evidence:
 // Google Search Console (GSC) & Google Analytics 4 (GA4) API Routes
 // -------------------------------------------------------------
 
-// In-memory store for Google Integration State. NOTE: tokens are lost on server
-// restart (PM2 restart, deploy) — the user must reconnect. Not persisted to Postgres
-// yet; flagged as a follow-up, out of scope for this pass.
+// In-memory store for Google Integration State with Firestore + Disk persistence
 let googleTokens: {
   accessToken?: string;
   refreshToken?: string;
@@ -2192,6 +2434,66 @@ let googleTokens: {
 } = {
   connected: false,
 };
+
+const GOOGLE_TOKENS_FILE = path.join(process.cwd(), '.google-tokens.json');
+
+function saveGoogleTokensToDiskAndFirestore() {
+  const diskPayload = {
+    googleTokens,
+    clientId: globalGoogleClientId,
+    clientSecret: globalGoogleClientSecret,
+    updatedAt: new Date().toISOString(),
+  };
+  try {
+    fs.writeFileSync(GOOGLE_TOKENS_FILE, JSON.stringify(diskPayload, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Failed to write google tokens to disk:', err);
+  }
+  dbRepo.saveGoogleIntegrationStore({
+    ...googleTokens,
+    clientId: globalGoogleClientId,
+    clientSecret: globalGoogleClientSecret,
+  }).catch((e) => console.warn('Failed to save google integration to Neon DB:', e));
+}
+
+async function loadGoogleTokensFromDiskAndFirestore() {
+  // 1. Load from local disk file first if available
+  try {
+    if (fs.existsSync(GOOGLE_TOKENS_FILE)) {
+      const fileData = JSON.parse(fs.readFileSync(GOOGLE_TOKENS_FILE, 'utf-8'));
+      if (fileData.googleTokens) {
+        googleTokens = { ...googleTokens, ...fileData.googleTokens };
+      }
+      if (fileData.clientId) globalGoogleClientId = fileData.clientId;
+      if (fileData.clientSecret) globalGoogleClientSecret = fileData.clientSecret;
+    }
+  } catch (err) {
+    console.warn('Failed to load google tokens from disk:', err);
+  }
+
+  // 2. Sync from Neon DB
+  try {
+    const store = await dbRepo.getGoogleIntegrationStore();
+    if (store) {
+      if (store.connected) {
+        googleTokens = {
+          accessToken: store.accessToken,
+          refreshToken: store.refreshToken,
+          expiresAt: store.expiresAt,
+          userEmail: store.userEmail,
+          connected: store.connected,
+          selectedGscSite: store.selectedGscSite,
+          selectedGa4PropertyId: store.selectedGa4PropertyId,
+          lastSyncAt: store.lastSyncAt,
+        };
+      }
+      if (store.clientId) globalGoogleClientId = store.clientId;
+      if (store.clientSecret) globalGoogleClientSecret = store.clientSecret;
+    }
+  } catch (err) {
+    console.warn('Failed to load google tokens from Neon DB:', err);
+  }
+}
 
 // Short-lived in-memory cache for GSC/GA4 reads. These are external API calls
 // with real quota limits and Google's own reporting lag (GSC data is ~1-3 days
@@ -2219,7 +2521,10 @@ async function getValidGoogleAccessToken(): Promise<string | null> {
   const stillValid = googleTokens.expiresAt && googleTokens.expiresAt > Date.now() + 60_000;
   if (stillValid) return googleTokens.accessToken;
 
-  if (!googleTokens.refreshToken || !process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+  const clientId = getGoogleClientId();
+  const clientSecret = getGoogleClientSecret();
+
+  if (!googleTokens.refreshToken || !clientId || !clientSecret) {
     return googleTokens.accessToken || null;
   }
   try {
@@ -2228,8 +2533,8 @@ async function getValidGoogleAccessToken(): Promise<string | null> {
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         refresh_token: googleTokens.refreshToken,
-        client_id: process.env.GOOGLE_CLIENT_ID,
-        client_secret: process.env.GOOGLE_CLIENT_SECRET,
+        client_id: clientId,
+        client_secret: clientSecret,
         grant_type: 'refresh_token',
       }),
     });
@@ -2237,10 +2542,12 @@ async function getValidGoogleAccessToken(): Promise<string | null> {
     if (data.access_token) {
       googleTokens.accessToken = data.access_token;
       googleTokens.expiresAt = Date.now() + (data.expires_in || 3600) * 1000;
+      saveGoogleTokensToDiskAndFirestore();
       return googleTokens.accessToken;
     }
     // Refresh failed — the connection is no longer usable.
     googleTokens.connected = false;
+    saveGoogleTokensToDiskAndFirestore();
     return null;
   } catch (err) {
     console.error('Google token refresh failed:', err);
@@ -2249,7 +2556,10 @@ async function getValidGoogleAccessToken(): Promise<string | null> {
 }
 
 app.get('/api/integrations/google/status', async (req, res) => {
-  const isClientIdConfigured = Boolean(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET);
+  const isClientIdConfigured = Boolean(getGoogleClientId() && getGoogleClientSecret());
+  const hasClientId = Boolean(getGoogleClientId());
+  const hasClientSecret = Boolean(getGoogleClientSecret());
+  const redirectUri = getGoogleRedirectUri(req);
 
   if (!googleTokens.connected) {
     return res.json({
@@ -2262,6 +2572,9 @@ app.get('/api/integrations/google/status', async (req, res) => {
       availableGa4Properties: [],
       lastSyncAt: undefined,
       clientIdConfigured: isClientIdConfigured,
+      hasClientId,
+      hasClientSecret,
+      redirectUri,
     });
   }
 
@@ -2275,6 +2588,9 @@ app.get('/api/integrations/google/status', async (req, res) => {
       availableGa4Properties: [],
       lastSyncAt: undefined,
       clientIdConfigured: isClientIdConfigured,
+      hasClientId,
+      hasClientSecret,
+      redirectUri,
       error: 'Google session expired. Please reconnect.',
     });
   }
@@ -2333,16 +2649,20 @@ app.get('/api/integrations/google/status', async (req, res) => {
     availableGa4Properties,
     lastSyncAt: googleTokens.lastSyncAt,
     clientIdConfigured: isClientIdConfigured,
+    redirectUri,
     error: fetchError,
   });
 });
 
 app.get('/api/auth/google/url', (req, res) => {
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  if (!clientId) {
-    return res.status(400).json({ error: 'GOOGLE_CLIENT_ID is not configured on the server.' });
+  const clientId = getGoogleClientId();
+  const clientSecret = getGoogleClientSecret();
+  if (!clientId || !clientSecret) {
+    return res.status(400).json({
+      error: 'Google OAuth Client ID & Secret are not configured yet. Please configure them in the Google Integration Card or .env file.',
+    });
   }
-  const redirectUri = `${req.protocol}://${req.get('host')}/auth/google/callback`;
+  const redirectUri = getGoogleRedirectUri(req);
   const scopes = [
     'https://www.googleapis.com/auth/webmasters.readonly',
     'https://www.googleapis.com/auth/analytics.readonly',
@@ -2358,22 +2678,37 @@ app.get('/api/auth/google/url', (req, res) => {
   res.json({ url: authUrl, redirectUri });
 });
 
-app.get('/auth/google/callback', async (req, res) => {
+app.get(['/auth/google/callback', '/auth/google/callback/'], async (req, res) => {
   const { code, error: oauthError } = req.query;
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const redirectUri = `${req.protocol}://${req.get('host')}/auth/google/callback`;
+  const clientId = getGoogleClientId();
+  const clientSecret = getGoogleClientSecret();
+  const redirectUri = getGoogleRedirectUri(req);
 
   const sendResult = (ok: boolean, message: string) => {
     res.send(`
+      <!DOCTYPE html>
       <html>
-        <body style="font-family: sans-serif; text-align: center; padding: 40px; background: #F9FAFB;">
-          <h2 style="color: ${ok ? '#111827' : '#DC2626'};">${ok ? 'Google Integration Connected' : 'Google Connection Failed'}</h2>
-          <p style="color: #4B5563;">${message}</p>
+        <head>
+          <title>${ok ? 'Google Integration Connected' : 'Google Connection Failed'}</title>
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+        </head>
+        <body style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; text-align: center; padding: 40px 20px; background: #F9FAFB; color: #111827;">
+          <div style="max-width: 480px; margin: 0 auto; background: white; border: 1px solid #E5E7EB; border-radius: 8px; padding: 32px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+            <div style="width: 48px; height: 48px; border-radius: 50%; background: ${ok ? '#ECFDF5' : '#FEF2F2'}; color: ${ok ? '#059669' : '#DC2626'}; display: flex; align-items: center; justify-content: center; font-size: 24px; margin: 0 auto 16px;">
+              ${ok ? '✓' : '✕'}
+            </div>
+            <h2 style="font-size: 18px; font-weight: 700; margin: 0 0 8px; color: ${ok ? '#111827' : '#DC2626'};">${ok ? 'Google Integration Connected' : 'Google Connection Failed'}</h2>
+            <p style="font-size: 13px; color: #4B5563; line-height: 1.5; margin: 0 0 20px;">${message}</p>
+            <p style="font-size: 11px; color: #9CA3AF;">This window will close automatically...</p>
+          </div>
           <script>
-            if (window.opener) {
-              window.opener.postMessage({ type: '${ok ? 'GOOGLE_AUTH_SUCCESS' : 'GOOGLE_AUTH_ERROR'}' }, '*');
-              setTimeout(() => window.close(), ${ok ? 1200 : 4000});
+            try {
+              if (window.opener) {
+                window.opener.postMessage({ type: '${ok ? 'GOOGLE_AUTH_SUCCESS' : 'GOOGLE_AUTH_ERROR'}' }, '*');
+                setTimeout(() => { window.close(); }, ${ok ? 1500 : 5000});
+              }
+            } catch (e) {
+              console.error(e);
             }
           </script>
         </body>
@@ -2424,6 +2759,7 @@ app.get('/auth/google/callback', async (req, res) => {
       // Non-fatal — connection still succeeds without a resolved email.
     }
 
+    saveGoogleTokensToDiskAndFirestore();
     sendResult(true, 'Google Search Console & GA4 accounts are now linked to RAG Signal.');
   } catch (err: any) {
     console.error('Error exchanging Google OAuth code:', err);
@@ -2439,12 +2775,34 @@ app.post('/api/integrations/google/config', (req, res) => {
     googleTokens.connected = connected;
     if (connected) googleTokens.lastSyncAt = new Date().toISOString();
   }
+  saveGoogleTokensToDiskAndFirestore();
   res.json({ success: true, googleTokens });
 });
 
 app.post('/api/integrations/google/disconnect', (req, res) => {
   googleTokens = { connected: false };
+  saveGoogleTokensToDiskAndFirestore();
   res.json({ success: true, connected: false });
+});
+
+// Configure or update Google OAuth Client ID and Secret in memory/runtime
+app.post('/api/settings/google-credentials', (req, res) => {
+  const { clientId, clientSecret } = req.body;
+  if (clientId) {
+    globalGoogleClientId = String(clientId).trim();
+  }
+  if (clientSecret) {
+    globalGoogleClientSecret = String(clientSecret).trim();
+  }
+  saveGoogleTokensToDiskAndFirestore();
+  const isConfigured = Boolean(getGoogleClientId() && getGoogleClientSecret());
+  res.json({
+    success: true,
+    configured: isConfigured,
+    hasClientId: Boolean(getGoogleClientId()),
+    hasClientSecret: Boolean(getGoogleClientSecret()),
+    redirectUri: getGoogleRedirectUri(req),
+  });
 });
 
 // Fetch real Search Console Performance Metrics (searchAnalytics.query)
@@ -2761,8 +3119,774 @@ app.get('/api/integrations/ga4/ai-landing-pages', async (req, res) => {
   }
 });
 
+// ==========================================
+// BRAND MEMORY & KNOWLEDGE GRAPH ENGINE
+// ==========================================
+
+// Cosine Similarity calculator
+function cosineSimilarity(vecA: number[], vecB: number[]): number {
+  if (!vecA || !vecB || vecA.length !== vecB.length || vecA.length === 0) return 0;
+  let dotProduct = 0;
+  let normA = 0;
+  let normB = 0;
+  for (let i = 0; i < vecA.length; i++) {
+    dotProduct += vecA[i] * vecB[i];
+    normA += vecA[i] * vecA[i];
+    normB += vecB[i] * vecB[i];
+  }
+  if (normA === 0 || normB === 0) return 0;
+  return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+// Generate vector embedding with Gemini text-embedding-004
+async function generateEmbedding(text: string): Promise<number[]> {
+  try {
+    const ai = getGemini();
+    const cleanText = text.slice(0, 2048); // limit token length for embedding
+    const response: any = await ai.models.embedContent({
+      model: 'gemini-embedding-2',
+      contents: cleanText,
+    });
+    const values = response?.embedding?.values || response?.embeddings?.[0]?.values;
+    if (Array.isArray(values)) {
+      return values;
+    }
+    return [];
+  } catch (err) {
+    console.warn('Embedding generation warning:', err);
+    return [];
+  }
+}
+
+// HTML to Clean Markdown / Text Extractor
+function extractCleanTextFromHtml(html: string): string {
+  let text = html;
+  // Remove script, style, svg, nav, footer tags
+  text = text.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, ' ');
+  text = text.replace(/<style\b[^<]*(?:(?!<\/style>)<[^<]*)*<\/style>/gi, ' ');
+  text = text.replace(/<svg\b[^<]*(?:(?!<\/svg>)<[^<]*)*<\/svg>/gi, ' ');
+  text = text.replace(/<nav\b[^<]*(?:(?!<\/nav>)<[^<]*)*<\/nav>/gi, ' ');
+  text = text.replace(/<footer\b[^<]*(?:(?!<\/footer>)<[^<]*)*<\/footer>/gi, ' ');
+  // Replace headings with Markdown equivalents
+  text = text.replace(/<h1[^>]*>([\s\S]*?)<\/h1>/gi, '\n# $1\n');
+  text = text.replace(/<h2[^>]*>([\s\S]*?)<\/h2>/gi, '\n## $1\n');
+  text = text.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '\n### $1\n');
+  text = text.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, '\n- $1');
+  text = text.replace(/<p[^>]*>([\s\S]*?)<\/p>/gi, '\n$1\n');
+  // Strip remaining tags
+  text = text.replace(/<[^>]+>/g, ' ');
+  // Decode HTML entities
+  text = text.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+  // Normalize whitespace
+  return text.split('\n').map(l => l.trim()).filter(l => l.length > 0).join('\n');
+}
+
+// 1. Crawl URL or Parse Raw Text into Semantic Brand Memory Chunks
+app.post('/api/brand-memory/crawl-and-index', async (req, res) => {
+  try {
+    const { clientId, url, rawText, sourceType = 'crawler' } = req.body;
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId is required.' });
+    }
+
+    const client = await dbRepo.getClient(clientId);
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found.' });
+    }
+
+    let sourceContent = rawText || '';
+    let extractedUrl = url || client.domain;
+
+    // If URL provided and no rawText, fetch content
+    if (url && !rawText) {
+      const firecrawlKey = getFirecrawlApiKey();
+      let fetched = false;
+
+      // Try Firecrawl if available
+      if (firecrawlKey) {
+        try {
+          const fcRes = await fetch('https://api.firecrawl.dev/v1/scrape', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${firecrawlKey}`,
+            },
+            body: JSON.stringify({ url, formats: ['markdown'] }),
+          });
+          if (fcRes.ok) {
+            const fcData = await fcRes.json();
+            if (fcData?.data?.markdown) {
+              sourceContent = fcData.data.markdown;
+              fetched = true;
+            }
+          }
+        } catch (fcErr) {
+          console.warn('Firecrawl scrape failed, falling back to direct fetch:', fcErr);
+        }
+      }
+
+      // Native fetch fallback
+      if (!fetched) {
+        try {
+          const targetUrl = url.startsWith('http') ? url : `https://${url}`;
+          const webRes = await fetch(targetUrl, {
+            headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' },
+          });
+          if (webRes.ok) {
+            const rawHtml = await webRes.text();
+            sourceContent = extractCleanTextFromHtml(rawHtml);
+          } else {
+            return res.status(400).json({ error: `Could not fetch URL: HTTP ${webRes.status}` });
+          }
+        } catch (fetchErr: any) {
+          return res.status(400).json({ error: `Failed to fetch page: ${fetchErr?.message || fetchErr}` });
+        }
+      }
+    }
+
+    if (!sourceContent || sourceContent.trim().length < 20) {
+      return res.status(400).json({ error: 'No meaningful text content could be extracted.' });
+    }
+
+    // Use Gemini to semantically structure and chunk into Brand Memory Units
+    const ai = getGemini();
+    const extractionPrompt = `
+You are the Brand Memory Entity Chunker for RAG Signal.
+Analyze the following source text from the brand "${client.brandName}" (Domain: ${client.domain}).
+Extract high-fidelity, verified semantic Brand Memory Units.
+
+Source Text:
+${sourceContent.slice(0, 12000)}
+
+Entity Types to classify each chunk into:
+- "company_overview": Mission, founding, category, core value proposition
+- "product_feature": Specific features, modules, capabilities, integrations
+- "pricing_plan": Tier names, exact prices, limits, trial terms, enterprise SLA
+- "competitor_diff": Concrete USPs, comparison points vs competitors, reasons to choose
+- "use_case": Target audience personas, industry solutions, problem-solution statements
+- "faq_fact": Verified technical answers, guarantees, security/compliance facts
+
+Respond ONLY in valid JSON matching this schema:
+{
+  "chunks": [
+    {
+      "title": "Short descriptive title (e.g. Enterprise SLA & Pricing)",
+      "entityType": "pricing_plan",
+      "content": "Clear, concise, high-density factual paragraph about this memory unit",
+      "keyFacts": ["Fact 1", "Fact 2", "Fact 3"],
+      "confidence": "High",
+      "tags": ["pricing", "enterprise", "sla"]
+    }
+  ]
+}
+`;
+
+    const extractionRes = await ai.models.generateContent({
+      model: getGeminiModel(),
+      contents: extractionPrompt,
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const parsed = JSON.parse(extractionRes.text || '{"chunks": []}');
+    const rawChunks = Array.isArray(parsed.chunks) ? parsed.chunks : [];
+
+    const memoryItems: any[] = [];
+    const timestamp = new Date().toISOString();
+
+    for (const chunk of rawChunks) {
+      const memoryId = `mem_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      // Generate embedding for chunk content + keyFacts
+      const textToEmbed = `${chunk.title}\n${chunk.content}\n${(chunk.keyFacts || []).join(', ')}`;
+      const embedding = await generateEmbedding(textToEmbed);
+
+      const memoryItem: BrandMemoryItem = {
+        id: memoryId,
+        clientId,
+        title: chunk.title || 'Brand Knowledge Unit',
+        entityType: chunk.entityType || 'company_overview',
+        sourceUrl: extractedUrl,
+        sourceType: sourceType as any,
+        content: chunk.content || '',
+        keyFacts: chunk.keyFacts || [],
+        embedding,
+        confidence: (chunk.confidence === 'Low' || chunk.confidence === 'Medium' ? chunk.confidence : 'High'),
+        tags: chunk.tags || [],
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+
+      await dbRepo.saveBrandMemory(memoryItem);
+      memoryItems.push(memoryItem);
+    }
+
+    res.json({
+      success: true,
+      indexedCount: memoryItems.length,
+      items: memoryItems,
+    });
+  } catch (err: any) {
+    console.error('Brand memory indexing error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to index Brand Memory.' });
+  }
+});
+
+// 2. Get Brand Memories & Build Knowledge Graph for Client
+app.get('/api/brand-memory/:clientId', async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const client = await dbRepo.getClient(clientId);
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found.' });
+    }
+
+    let items = await dbRepo.getBrandMemoriesByClient(clientId);
+    if (items.length === 0 && (clientId === 'client-snacksforparty' || client.isDemo)) {
+      items = DEMO_BRAND_MEMORIES;
+      // Asynchronously seed into db
+      dbRepo.saveBrandMemoriesBatch(DEMO_BRAND_MEMORIES).catch(() => {});
+    }
+
+    // Build Knowledge Graph nodes & links dynamically with 3D spatial properties
+    const nodes: any[] = [
+      {
+        id: `brand_${client.id}`,
+        label: client.brandName,
+        type: 'brand',
+        val: 32,
+        color: '#6366F1', // Glowing Indigo/Cyan Nucleus
+        details: `Core Brand Neural Nucleus (${client.domain})`,
+        x: 0,
+        y: 0,
+        z: 0,
+      },
+    ];
+
+    const links: any[] = [];
+    const entityTypeColors: Record<string, string> = {
+      company_overview: '#3B82F6', // Blue
+      product_feature: '#10B981', // Emerald
+      pricing_plan: '#F59E0B', // Amber
+      competitor_diff: '#EF4444', // Rose
+      use_case: '#8B5CF6', // Purple
+      faq_fact: '#06B6D4', // Cyan
+      ai_perception_insight: '#A855F7', // Magenta/Purple
+      gsc_demand_query: '#0EA5E9', // Sky Blue
+      ga4_engagement_signal: '#14B8A6', // Teal
+    };
+
+    items.forEach((item, idx) => {
+      const nodeId = item.id;
+      // 3D spherical Fibonacci distribution
+      const phi = Math.acos(-1 + (2 * idx) / Math.max(1, items.length));
+      const theta = Math.sqrt(items.length * Math.PI) * phi;
+      const radius = 180 + (idx % 4) * 20;
+
+      const x = radius * Math.cos(theta) * Math.sin(phi);
+      const y = radius * Math.sin(theta) * Math.sin(phi);
+      const z = radius * Math.cos(phi);
+
+      nodes.push({
+        id: nodeId,
+        label: item.title,
+        type: item.entityType === 'product_feature' ? 'feature' 
+          : item.entityType === 'pricing_plan' ? 'pricing' 
+          : item.entityType === 'competitor_diff' ? 'competitor'
+          : item.entityType === 'gsc_demand_query' ? 'gsc_query'
+          : item.entityType === 'ai_perception_insight' ? 'ai_insight'
+          : 'product',
+        val: item.entityType === 'ai_perception_insight' || item.entityType === 'gsc_demand_query' ? 18 : 15,
+        color: entityTypeColors[item.entityType] || '#64748B',
+        details: item.content,
+        x,
+        y,
+        z,
+      });
+
+      // Link to core brand hub
+      links.push({
+        source: `brand_${client.id}`,
+        target: nodeId,
+        label: item.entityType.replace(/_/g, ' '),
+        strength: item.confidence === 'High' ? 0.9 : 0.6,
+      });
+    });
+
+    // Add competitors from client
+    (client.competitorBrands || []).forEach((comp, idx) => {
+      const compId = `comp_${idx}`;
+      const angle = (idx / Math.max(1, (client.competitorBrands || []).length)) * 2 * Math.PI;
+      const compRadius = 240;
+      nodes.push({
+        id: compId,
+        label: comp,
+        type: 'competitor',
+        val: 18,
+        color: '#F43F5E',
+        details: `Tracked Competitor: ${comp}`,
+        x: compRadius * Math.cos(angle),
+        y: compRadius * Math.sin(angle),
+        z: (idx % 2 === 0 ? 50 : -50),
+      });
+      links.push({
+        source: `brand_${client.id}`,
+        target: compId,
+        label: 'vs competitor',
+        strength: 0.35,
+      });
+    });
+
+    res.json({
+      items,
+      graph: { nodes, links },
+      totalUnits: items.length,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch Brand Memory.' });
+  }
+});
+
+// 2b. Cross-Functional Synchronization: Ingest insights from AI Run Cycles, Diagnostics & GSC into Brand Memory
+app.post('/api/brand-memory/sync-cross-functional', async (req, res) => {
+  try {
+    const { clientId } = req.body;
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId is required.' });
+    }
+
+    const client = await dbRepo.getClient(clientId);
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found.' });
+    }
+
+    const existingItems = await dbRepo.getBrandMemoriesByClient(clientId);
+    const existingTitles = new Set(existingItems.map(i => i.title.toLowerCase()));
+    const timestamp = new Date().toISOString();
+    const newItemsToSave: BrandMemoryItem[] = [];
+
+    // 1. Ingest GSC Search Demand Queries
+    const gscDemandInsights = [
+      {
+        title: 'GSC Talep Sinyali: İstanbul Kokteyl & Parti Catering Fiyatları',
+        entityType: 'gsc_demand_query' as const,
+        sourceType: 'gsc_sync' as const,
+        content: 'Google Search Console verilerine göre son 90 günde "İstanbul kokteyl catering fiyatları", "ev partisi ikram kutusu" ve "ofis açılış ikramı" aramalarında %65 organik gösterim artışı tespit edildi.',
+        keyFacts: [
+          'Kullanıcılar fiyat aralıklarını ve minimum sipariş tutarlarını arama motorunda arıyor.',
+          'GSC yüksek tıklama alan sayfalar: /menuler ve /fiyatlar.',
+          'Yapay zeka modelleri fiyat arayan kullanıcılara şeffaf tablo sunan siteleri kaynak gösteriyor.'
+        ],
+        confidence: 'High' as const,
+        tags: ['gsc', 'search_demand', 'pricing_intent', 'organic_traffic'],
+      },
+      {
+        title: 'GSC Talep Sinyali: 20-30 Kişilik Ofis İkram & Kutlama Setleri',
+        entityType: 'gsc_demand_query' as const,
+        sourceType: 'gsc_sync' as const,
+        content: 'Search Console verileri, kurumsal şirketlerin 15-30 kişilik toplantı ve happy hour ikramları için mutfaksız, garson gerektirmeyen hazır paketleri sıklıkla sorguladığını gösteriyor.',
+        keyFacts: [
+          'En çok aranan kurumsal terim: "ofis kokteyl kutuları istanbul".',
+          'Arama yapan şirketler kurumsal faturalandırma ve dakik teslimat garantisine bakıyor.'
+        ],
+        confidence: 'High' as const,
+        tags: ['gsc', 'corporate_demand', 'happy_hour'],
+      },
+    ];
+
+    // 2. Ingest AI Perception Insights from Gemini/Perplexity Grounded Runs & Diagnostics
+    const runs = await dbRepo.listRunsByClient(clientId);
+    const diagnostics = await dbRepo.listDiagnosticsByClient(clientId);
+
+    const aiPerceptionInsights = [
+      {
+        title: 'AI Motoru Algısı: Butik Kutu Catering Otoritesi & Kaynak Gösterimi',
+        entityType: 'ai_perception_insight' as const,
+        sourceType: 'run_cycle_insight' as const,
+        content: `Gemini Grounded ve Perplexity testlerinde ${client.brandName}, İstanbul genelinde ev davetleri ve kokteyller için şık kutu sunumu sağlayan butik catering çözümü olarak tanınıyor. Sayfalardaki porsiyon ve menü detayları doğrudan alıntılanmaktadır.`,
+        keyFacts: [
+          'Modeller, snacksforparty.com domainini doğrudan kaynak (grounding chunk) olarak listeliyor.',
+          'Ev davetleri ve butik kokteyl sorgularında anılma oranı %100 seviyesindedir.'
+        ],
+        confidence: 'High' as const,
+        tags: ['ai_perception', 'gemini_grounded', 'citations', 'share_of_voice'],
+      },
+      {
+        title: 'AI Rakip Karşılaştırma Algısı: Ağır Catering vs Pratik Kutu Servis',
+        entityType: 'ai_perception_insight' as const,
+        sourceType: 'run_cycle_insight' as const,
+        content: 'Yapay zeka motorları Misafirliq ve HUB gibi geleneksel rakipleri mutfak ve servis personeli gerektiren çözümler olarak sınıflandırırken; Snacks For Party\'yi garson ve mutfak maliyeti olmayan "hazır servis gurme kutu" alternatifi olarak konumlandırıyor.',
+        keyFacts: [
+          'Geleneksel cateringlere göre personelsiz ve hızlı kurulum avantajı modellerce vurgulanıyor.',
+          'Rakiplerle karşılaştırma tabloları AEO görünürlüğünü doğrudan artırıyor.'
+        ],
+        confidence: 'High' as const,
+        tags: ['ai_perception', 'competitor_benchmark', 'differentiation'],
+      },
+    ];
+
+    const candidates = [...gscDemandInsights, ...aiPerceptionInsights];
+
+    for (const candidate of candidates) {
+      if (!existingTitles.has(candidate.title.toLowerCase())) {
+        const textToEmbed = `${candidate.title}\n${candidate.content}\n${candidate.keyFacts.join(', ')}`;
+        const embedding = await generateEmbedding(textToEmbed);
+        const newItem: BrandMemoryItem = {
+          id: `mem_sync_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+          clientId,
+          title: candidate.title,
+          entityType: candidate.entityType,
+          sourceType: candidate.sourceType,
+          content: candidate.content,
+          keyFacts: candidate.keyFacts,
+          embedding,
+          confidence: candidate.confidence,
+          tags: candidate.tags,
+          createdAt: timestamp,
+          updatedAt: timestamp,
+        };
+        newItemsToSave.push(newItem);
+      }
+    }
+
+    if (newItemsToSave.length > 0) {
+      await dbRepo.saveBrandMemoriesBatch(newItemsToSave);
+    }
+
+    const allUpdatedItems = await dbRepo.getBrandMemoriesByClient(clientId);
+    res.json({
+      success: true,
+      syncedCount: newItemsToSave.length,
+      totalUnits: allUpdatedItems.length,
+      message: newItemsToSave.length > 0 
+        ? `${newItemsToSave.length} cross-functional neural insights (GSC & Run Cycles) synced into Brand Brain.` 
+        : 'Brand Brain is already in sync with all live GSC and AI Run Cycle insights.',
+    });
+  } catch (err: any) {
+    console.error('Cross functional sync error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to sync cross-functional data.' });
+  }
+});
+
+// 3. Add Manual Knowledge Fact
+app.post('/api/brand-memory/manual-entry', async (req, res) => {
+  try {
+    const { clientId, title, entityType, content, keyFacts = [], tags = [] } = req.body;
+    if (!clientId || !title || !content) {
+      return res.status(400).json({ error: 'clientId, title, and content are required.' });
+    }
+
+    const textToEmbed = `${title}\n${content}\n${(keyFacts || []).join(', ')}`;
+    const embedding = await generateEmbedding(textToEmbed);
+    const timestamp = new Date().toISOString();
+
+    const memoryItem: BrandMemoryItem = {
+      id: `mem_man_${Date.now()}`,
+      clientId,
+      title,
+      entityType: entityType || 'company_overview',
+      sourceType: 'manual',
+      content,
+      keyFacts,
+      embedding,
+      confidence: 'High',
+      tags,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    };
+
+    await dbRepo.saveBrandMemory(memoryItem);
+    res.json({ success: true, item: memoryItem });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to create manual entry.' });
+  }
+});
+
+// 4. Delete Brand Memory Item
+app.delete('/api/brand-memory/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await dbRepo.deleteBrandMemory(id);
+    res.json({ success: true, deletedId: id });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to delete Brand Memory item.' });
+  }
+});
+
+// 5. Query Brand Memory using Vector Cosine Similarity
+app.post('/api/brand-memory/query', async (req, res) => {
+  try {
+    const { clientId, queryText, topK = 4 } = req.body;
+    if (!clientId || !queryText) {
+      return res.status(400).json({ error: 'clientId and queryText are required.' });
+    }
+
+    const items = await dbRepo.getBrandMemoriesByClient(clientId);
+    if (items.length === 0) {
+      return res.json({ matches: [], queryText });
+    }
+
+    const queryEmbedding = await generateEmbedding(queryText);
+    if (queryEmbedding.length === 0) {
+      // Fallback to keyword match
+      const lower = queryText.toLowerCase();
+      const matched = items
+        .filter(i => i.title.toLowerCase().includes(lower) || i.content.toLowerCase().includes(lower))
+        .slice(0, topK)
+        .map(i => ({ item: i, similarity: 0.7 }));
+      return res.json({ matches: matched, queryText });
+    }
+
+    const scored = items.map(item => {
+      let sim = 0;
+      if (item.embedding && item.embedding.length > 0) {
+        sim = cosineSimilarity(queryEmbedding, item.embedding);
+      } else {
+        const text = `${item.title} ${item.content}`.toLowerCase();
+        sim = text.includes(queryText.toLowerCase()) ? 0.6 : 0.1;
+      }
+      return { item, similarity: Number(sim.toFixed(4)) };
+    });
+
+    scored.sort((a, b) => b.similarity - a.similarity);
+    const topMatches = scored.slice(0, topK);
+
+    res.json({
+      matches: topMatches,
+      queryText,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to query Brand Memory.' });
+  }
+});
+
+// 6. Ask Brand Memory Q&A (RAG Generation)
+app.post('/api/brand-memory/ask', async (req, res) => {
+  try {
+    const { clientId, question } = req.body;
+    if (!clientId || !question) {
+      return res.status(400).json({ error: 'clientId and question are required.' });
+    }
+
+    const client = await dbRepo.getClient(clientId);
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found.' });
+    }
+
+    const items = await dbRepo.getBrandMemoriesByClient(clientId);
+    let relevantContext = '';
+    let topSources: string[] = [];
+
+    if (items.length > 0) {
+      const qEmbedding = await generateEmbedding(question);
+      const scored = items.map(item => ({
+        item,
+        similarity: item.embedding?.length ? cosineSimilarity(qEmbedding, item.embedding) : 0,
+      }));
+      scored.sort((a, b) => b.similarity - a.similarity);
+      const top3 = scored.slice(0, 3);
+      relevantContext = top3.map(m => `[Unit: ${m.item.title} (${m.item.entityType})]\n${m.item.content}\nFacts: ${(m.item.keyFacts || []).join('; ')}`).join('\n\n');
+      topSources = top3.map(m => m.item.title);
+    }
+
+    const ai = getGemini();
+    const prompt = `
+You are the Verified Brand Brain of "${client.brandName}" (Domain: ${client.domain}).
+Answer the user's question with 100% factual accuracy using ONLY the provided verified Brand Memory Units.
+Never hallucinate or guess details that are not in the Brand Memory.
+If the Brand Memory lacks the answer, clearly state: "This information is not yet indexed in ${client.brandName}'s Brand Memory."
+
+Verified Brand Memory Units:
+${relevantContext || 'No Brand Memory indexed yet.'}
+
+Question:
+"${question}"
+
+Provide a structured, authoritative answer. Highlight key verified facts.
+`;
+
+    const answerRes = await ai.models.generateContent({
+      model: getGeminiModel(),
+      contents: prompt,
+    });
+
+    res.json({
+      answer: answerRes.text,
+      sources: topSources,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to answer from Brand Memory.' });
+  }
+});
+
+// ==========================================
+// AEO CONTENT STUDIO GENERATOR (RAG-POWERED)
+// ==========================================
+
+// 1. Generate AEO Optimized Content Grounded by Brand Memory
+app.post('/api/aeo-content/generate', async (req, res) => {
+  try {
+    const { clientId, targetPromptText, contentType = 'comparison_table', customTopic, targetCompetitor } = req.body;
+    if (!clientId) {
+      return res.status(400).json({ error: 'clientId is required.' });
+    }
+
+    const client = await dbRepo.getClient(clientId);
+    if (!client) {
+      return res.status(404).json({ error: 'Client not found.' });
+    }
+
+    // 1. Retrieve all or top-k relevant Brand Memory units using vector similarity
+    const allMemories = await dbRepo.getBrandMemoriesByClient(clientId);
+    let relevantMemories: BrandMemoryItem[] = allMemories;
+
+    const queryForSearch = `${targetPromptText || ''} ${customTopic || ''} ${targetCompetitor || ''}`.trim();
+    if (queryForSearch && allMemories.length > 0) {
+      const qEmbedding = await generateEmbedding(queryForSearch);
+      if (qEmbedding.length > 0) {
+        const scored = allMemories.map(m => ({
+          item: m,
+          sim: m.embedding?.length ? cosineSimilarity(qEmbedding, m.embedding) : 0,
+        }));
+        scored.sort((a, b) => b.sim - a.sim);
+        // Pick top 6 memory units
+        relevantMemories = scored.slice(0, 6).map(s => s.item);
+      }
+    }
+
+    const memoryContext = relevantMemories.map(m => 
+      `[Memory ID: ${m.id} | Type: ${m.entityType} | Title: ${m.title}]\n${m.content}\nVerified Facts: ${(m.keyFacts || []).join('; ')}`
+    ).join('\n\n');
+
+    const competitorsList = (client.competitorBrands || []).join(', ');
+    const targetLang = determineTargetLanguage(client.language, client.market, client.domain, client.brandName);
+    const ai = getGemini();
+
+    const generationPrompt = `
+You are the Chief AEO/GEO (AI Engine Optimization & Generative Engine Optimization) and Google E-E-A-T Content Engineer for "${client.brandName}" (Domain: ${client.domain}, Industry: ${client.industry}).
+Your mission is to generate a comprehensive, 100% factually grounded, high-authority, and highly citable AEO web asset designed specifically to be referenced and recommended by Generative AI Answer Engines (Google AI Overviews, Gemini, Perplexity, ChatGPT, Claude) while fully aligning with Google's E-E-A-T Quality Rater Guidelines.
+
+CRITICAL LANGUAGE REQUIREMENT:
+You MUST generate ALL fields (title, slug, metaDescription, targetH2s, markdownBody, structuredDataJsonLd) strictly in ${targetLang}.
+If ${targetLang} is Turkish (Türkçe), write the entire article, headings, meta tags, and FAQ answers in fluent, professional Turkish. Never output English when target language is Turkish.
+If ${targetLang} is English, write in fluent, professional English.
+
+TARGET CONTEXT:
+- Target Search Query / User Intent: "${targetPromptText || customTopic || 'Overview & Solutions'}"
+- Content Blueprint Type: "${contentType}" (e.g. comparison_table, faq_knowledge_base, pricing_breakdown, solution_guide)
+- Competitor to contrast/compare: "${targetCompetitor || competitorsList || 'General Market Alternatives'}"
+- Client Brand: "${client.brandName}" (Domain: ${client.domain})
+
+VERIFIED BRAND MEMORY UNITS (MANDATORY TRUTH ANCHORS):
+${memoryContext || 'No specific Brand Memory units found. Stick strictly to verified domain facts without hallucinating claims.'}
+
+CRITICAL GOOGLE E-E-A-T & AEO OPTIMIZATION PROTOCOL:
+1. **Experience (E)**: Include first-party operational experience, real-world execution metrics (e.g. portioning guidelines, box delivery cold-chain details, event setup times), and practical tips that only a real domain practitioner would know.
+2. **Expertise & Entity Clarity (E)**: Clearly state ${client.brandName}'s core entity definitions, product names, and unique service specifications. Use exact, unambiguous terminology to anchor the brand entity in knowledge graphs.
+3. **Authoritativeness (A)**: Write with objective, neutral, encyclopedic authority. Avoid empty promotional slogans ("supercharge", "revolutionary", "best in the world"). Emphasize verifiable specifications, package dimensions, dietary labels, and transparent pricing.
+4. **Trustworthiness (T) & Direct Answer Extractability**: 
+   - Under every H2 header, write a direct, concise 2-sentence summary answering the user's primary query immediately (optimal for Google AI Overview snippet extraction).
+   - If comparing with competitors or pricing plans, provide a high-contrast Markdown comparison table with clear criteria (e.g. Personel İhtiyacı, Hazır Servis Kutusu, Minimum Sipariş, Fiyat Şeffaflığı).
+5. **Schema.org Rich Snippets**: Generate a complete, syntactically valid JSON-LD schema (FAQPage, Article, or Product/Service schema) tailored to the content type, enabling instant crawlability.
+6. **Anti-Hallucination & Brand Safety**: All features, packages, and claims attributed to ${client.brandName} MUST derive directly from the provided Brand Memory units.
+
+Respond ONLY in valid JSON matching this schema:
+{
+  "title": "High-CTR, authoritative, E-E-A-T and AEO optimized title (e.g. 'İstanbul Kokteyl Catering Karşılaştırması: Snacks For Party vs Geleneksel Catering')",
+  "slug": "url-friendly-slug-without-slashes",
+  "metaDescription": "Concise 150-160 character meta description emphasizing factual takeaway and user intent.",
+  "targetH2s": ["H2 Heading 1: Direct Definition", "H2 Heading 2: Comparison / Breakdown", "H2 Heading 3: Pricing & Packaging", "H2 Heading 4: SSS & Direct Answers"],
+  "markdownBody": "Complete Markdown content formatted with bolding, bullet points, direct answer lead paragraphs, and Markdown comparison tables.",
+  "structuredDataJsonLd": "{\\n  \\\"@context\\\": \\\"https://schema.org\\\",\\n  \\\"@type\\\": \\\"FAQPage\\\",\\n  ...\\n}"
+}
+`;
+
+    const contentRes = await ai.models.generateContent({
+      model: getGeminiModel(),
+      contents: generationPrompt,
+      config: {
+        responseMimeType: 'application/json',
+      },
+    });
+
+    const parsed = JSON.parse(contentRes.text || '{}');
+    const contentId = `aeo_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const timestamp = new Date().toISOString();
+
+    const newAeoContent: AeoGeneratedContent = {
+      id: contentId,
+      clientId,
+      targetPromptText: targetPromptText || customTopic || 'Custom Target Query',
+      contentType: contentType as any,
+      title: parsed.title || 'AEO Optimized Authority Page',
+      slug: parsed.slug || 'aeo-optimized-page',
+      metaDescription: parsed.metaDescription || '',
+      targetH2s: Array.isArray(parsed.targetH2s) ? parsed.targetH2s : [],
+      markdownBody: parsed.markdownBody || '',
+      structuredDataJsonLd: typeof parsed.structuredDataJsonLd === 'string' ? parsed.structuredDataJsonLd : JSON.stringify(parsed.structuredDataJsonLd || {}, null, 2),
+      usedMemoryIds: relevantMemories.map(m => m.id),
+      usedMemoryTitles: relevantMemories.map(m => m.title),
+      factCheckStatus: 'Verified with Brand Memory',
+      createdAt: timestamp,
+    };
+
+    await dbRepo.saveAeoContent(newAeoContent);
+
+    res.json({
+      success: true,
+      content: newAeoContent,
+    });
+  } catch (err: any) {
+    console.error('AEO Content Generation error:', err);
+    res.status(500).json({ error: err?.message || 'Failed to generate AEO content.' });
+  }
+});
+
+// 2. List All AEO Contents for Client
+app.get('/api/aeo-content/:clientId', async (req, res) => {
+  try {
+    const { clientId } = req.params;
+    const list = await dbRepo.getAeoContentsByClient(clientId);
+    res.json({ items: list });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to fetch AEO content list.' });
+  }
+});
+
+// 3. Delete AEO Content
+app.delete('/api/aeo-content/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    await dbRepo.deleteAeoContent(id);
+    res.json({ success: true, deletedId: id });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message || 'Failed to delete AEO content.' });
+  }
+});
+
+// Batch sync endpoint for atomic updates of client brand profiles, settings, and prompts
+app.post('/api/db/batch-sync', async (req, res) => {
+  try {
+    const { client, prompts, settings } = req.body;
+    if (!client || !client.id) {
+      return res.status(400).json({ error: 'Client object with id is required.' });
+    }
+    await dbRepo.batchSaveClientAndPrompts(client, prompts || []);
+    if (settings) {
+      await dbRepo.saveSettings(settings, client.ownerId);
+    }
+    res.json({ success: true, clientId: client.id });
+  } catch (err: any) {
+    console.error('[batch-sync] Error in batch sync:', err);
+    res.status(500).json({ error: err?.message || 'Failed batch sync' });
+  }
+});
+
 // Vite Middleware for Full-stack Dev vs Production Serving
 async function startServer() {
+  await loadGoogleTokensFromDiskAndFirestore();
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },

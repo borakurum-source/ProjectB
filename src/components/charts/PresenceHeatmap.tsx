@@ -102,56 +102,56 @@ export function PresenceHeatmap({
             <div
               key={pa.promptId}
               onClick={() => onInspectPrompt && onInspectPrompt(pa.promptId)}
-              className="p-3.5 bg-[#F9FAFB] border border-[#E5E7EB] rounded-xs space-y-2.5 active:bg-[#F3F4F6] cursor-pointer"
+              className="p-3.5 bg-[#F9FAFB] dark:bg-[#1E293B]/50 border border-[#E5E7EB] dark:border-[#334155] rounded-xs space-y-2.5 active:bg-[#F3F4F6] dark:active:bg-[#334155] cursor-pointer"
             >
               <div className="flex items-start justify-between gap-2">
-                <div className="font-semibold text-xs text-[#111827] leading-snug">
+                <div className="font-semibold text-xs text-[#111827] dark:text-[#F8FAFC] leading-snug">
                   {pa.promptText}
                 </div>
                 <div className="shrink-0">
                   {pa.volatility ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#FEF3C7] text-[#D97706] border border-[#FDE68A] text-[9px] font-bold uppercase tracking-wider">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#FEF3C7] dark:bg-[#78350F] text-[#D97706] dark:text-[#FDE68A] border border-[#FDE68A] dark:border-[#B45309] text-[9px] font-bold uppercase tracking-wider">
                       <AlertCircle className="w-2.5 h-2.5" /> Volatile
                     </span>
                   ) : pa.mentionRate === 1 ? (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0] text-[9px] font-bold uppercase tracking-wider">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#ECFDF5] dark:bg-[#064E3B] text-[#065F46] dark:text-[#A7F3D0] border border-[#A7F3D0] dark:border-[#065F46] text-[9px] font-bold uppercase tracking-wider">
                       <CheckCircle2 className="w-2.5 h-2.5" /> 100%
                     </span>
                   ) : (
-                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white text-[#6B7280] border border-[#E5E7EB] text-[9px] font-bold uppercase tracking-wider">
-                      <XCircle className="w-2.5 h-2.5 text-[#9CA3AF]" /> 0%
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white dark:bg-[#1E293B] text-[#6B7280] dark:text-[#94A3B8] border border-[#E5E7EB] dark:border-[#334155] text-[9px] font-bold uppercase tracking-wider">
+                      <XCircle className="w-2.5 h-2.5 text-[#9CA3AF] dark:text-[#64748B]" /> 0%
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[#6B7280]">
-                <span className="bg-white border border-[#E5E7EB] px-1.5 py-0.5 font-medium text-[#374151]">
+              <div className="flex flex-wrap items-center gap-1.5 text-[10px] text-[#6B7280] dark:text-[#94A3B8]">
+                <span className="bg-white dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] px-1.5 py-0.5 font-medium text-[#374151] dark:text-[#CBD5E1]">
                   {pa.intentLayer}
                 </span>
                 <span>• {pa.category}</span>
                 <span>• n={pa.runsCount}</span>
                 {pa.citationCount > 0 && (
-                  <span className="text-[#065F46] bg-[#ECFDF5] px-1.5 py-0.5 border border-[#A7F3D0] font-mono">
+                  <span className="text-[#065F46] dark:text-[#A7F3D0] bg-[#ECFDF5] dark:bg-[#064E3B] px-1.5 py-0.5 border border-[#A7F3D0] dark:border-[#065F46] font-mono">
                     Cited in {pa.citationCount}/{pa.runsCount}
                   </span>
                 )}
               </div>
 
               {/* Client & Competitor Mention Bars */}
-              <div className="space-y-1.5 pt-1 border-t border-[#E5E7EB]">
+              <div className="space-y-1.5 pt-1 border-t border-[#E5E7EB] dark:border-[#334155]">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-bold text-[#111827] flex items-center gap-1">
-                    <span className="w-2 h-2 bg-[#111827] inline-block rounded-full" />
+                  <span className="font-bold text-[#111827] dark:text-[#F8FAFC] flex items-center gap-1">
+                    <span className="w-2 h-2 bg-[#111827] dark:bg-[#6366F1] inline-block rounded-full" />
                     {client.brandName} (Client)
                   </span>
-                  <span className="font-mono font-bold text-[#111827]">
+                  <span className="font-mono font-bold text-[#111827] dark:text-[#F8FAFC]">
                     {Math.round(pa.mentionRate * 100)}% ({pa.mentionCount}/{pa.runsCount})
                   </span>
                 </div>
-                <div className="w-full bg-[#E5E7EB] h-1.5 rounded-full overflow-hidden">
+                <div className="w-full bg-[#E5E7EB] dark:bg-[#334155] h-1.5 rounded-full overflow-hidden">
                   <div
-                    className="bg-[#111827] h-full rounded-full"
+                    className="bg-[#111827] dark:bg-[#6366F1] h-full rounded-full"
                     style={{ width: `${Math.round(pa.mentionRate * 100)}%` }}
                   />
                 </div>
@@ -163,10 +163,10 @@ export function PresenceHeatmap({
                     return (
                       <div
                         key={comp}
-                        className="bg-white p-1.5 border border-[#E5E7EB] flex items-center justify-between text-[11px]"
+                        className="bg-white dark:bg-[#1E293B] p-1.5 border border-[#E5E7EB] dark:border-[#334155] flex items-center justify-between text-[11px]"
                       >
-                        <span className="text-[#6B7280] truncate mr-1">{comp}</span>
-                        <span className="font-mono font-semibold text-[#111827]">
+                        <span className="text-[#6B7280] dark:text-[#94A3B8] truncate mr-1">{comp}</span>
+                        <span className="font-mono font-semibold text-[#111827] dark:text-[#F8FAFC]">
                           {Math.round(compData.rate * 100)}%
                         </span>
                       </div>
@@ -183,14 +183,14 @@ export function PresenceHeatmap({
       <div className="hidden sm:block overflow-x-auto">
         <table className="w-full text-xs text-left border-collapse">
           <thead>
-            <tr className="border-b border-[#E5E7EB] bg-[#F9FAFB]">
-              <th className="py-3 px-3 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] min-w-[280px]">
+            <tr className="border-b border-[#E5E7EB] dark:border-[#1E293B] bg-[#F9FAFB] dark:bg-[#1E293B]/60">
+              <th className="py-3 px-3 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8] min-w-[280px]">
                 Tracked Prompt Query
               </th>
-              <th className="py-3 px-2 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] w-24">
+              <th className="py-3 px-2 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8] w-24">
                 Intent
               </th>
-              <th className="py-3 px-2 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] w-20 text-center">
+              <th className="py-3 px-2 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8] w-20 text-center">
                 Runs (n)
               </th>
               {columns.map((col) => (
@@ -198,50 +198,50 @@ export function PresenceHeatmap({
                   key={col.key}
                   className={`py-3 px-3 font-bold text-[10px] uppercase tracking-wider text-center min-w-[130px] ${
                     col.isClient
-                      ? 'bg-[#F3F4F6] text-[#111827] border-x border-[#E5E7EB]'
-                      : 'text-[#6B7280]'
+                      ? 'bg-[#F3F4F6] dark:bg-[#312E81]/30 text-[#111827] dark:text-[#F8FAFC] border-x border-[#E5E7EB] dark:border-[#3730A3]'
+                      : 'text-[#6B7280] dark:text-[#94A3B8]'
                   }`}
                 >
                   {col.label}
                 </th>
               ))}
-              <th className="py-3 px-2 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] w-24 text-center">
+              <th className="py-3 px-2 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8] w-24 text-center">
                 Stability
               </th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-[#E5E7EB]">
+          <tbody className="divide-y divide-[#E5E7EB] dark:divide-[#1E293B]">
             {promptAggregates.map((pa) => {
               return (
                 <tr
                   key={pa.promptId}
-                  className="hover:bg-[#F9FAFB] transition-colors group cursor-pointer"
+                  className="hover:bg-[#F9FAFB] dark:hover:bg-[#1E293B]/40 transition-colors group cursor-pointer"
                   onClick={() => onInspectPrompt && onInspectPrompt(pa.promptId)}
                 >
                   <td className="py-3 px-3">
-                    <div className="font-medium text-[#111827] group-hover:text-black transition-colors">
+                    <div className="font-medium text-[#111827] dark:text-[#F8FAFC] group-hover:text-black dark:group-hover:text-white transition-colors">
                       {pa.promptText}
                     </div>
-                    <div className="text-[11px] text-[#6B7280] mt-0.5 flex items-center gap-2">
+                    <div className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] mt-0.5 flex items-center gap-2">
                       <span>{pa.category}</span>
                       {pa.citationCount > 0 && (
-                        <span className="text-[#065F46] bg-[#ECFDF5] px-1.5 py-0.5 rounded-[2px] text-[10px] font-mono border border-[#A7F3D0]">
+                        <span className="text-[#065F46] dark:text-[#A7F3D0] bg-[#ECFDF5] dark:bg-[#064E3B] px-1.5 py-0.5 rounded-[2px] text-[10px] font-mono border border-[#A7F3D0] dark:border-[#065F46]">
                           Cited in {pa.citationCount}/{pa.runsCount} runs
                         </span>
                       )}
                     </div>
                   </td>
-                  <td className="py-3 px-2 text-[#4B5563]">
-                    <span className="px-2 py-0.5 bg-[#F3F4F6] border border-[#E5E7EB] text-[#374151] text-[11px]">
+                  <td className="py-3 px-2 text-[#4B5563] dark:text-[#CBD5E1]">
+                    <span className="px-2 py-0.5 bg-[#F3F4F6] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] text-[#374151] dark:text-[#CBD5E1] text-[11px]">
                       {pa.intentLayer}
                     </span>
                   </td>
-                  <td className="py-3 px-2 text-[#6B7280] font-mono text-center">
+                  <td className="py-3 px-2 text-[#6B7280] dark:text-[#94A3B8] font-mono text-center">
                     n={pa.runsCount}
                   </td>
 
                   {/* Client Column */}
-                  <td className="p-1.5 border-x border-[#E5E7EB] bg-[#F9FAFB]/50">
+                  <td className="p-1.5 border-x border-[#E5E7EB] dark:border-[#3730A3] bg-[#F9FAFB]/50 dark:bg-[#312E81]/10">
                     <div
                       className={`h-9 flex flex-col items-center justify-center transition-all ${getCellColor(
                         pa.mentionRate,
@@ -282,18 +282,18 @@ export function PresenceHeatmap({
                   {/* Stability Indicator */}
                   <td className="py-3 px-2 text-center">
                     {pa.runsCount === 0 ? (
-                      <span className="text-[#9CA3AF] text-[11px]">—</span>
+                      <span className="text-[#9CA3AF] dark:text-[#64748B] text-[11px]">—</span>
                     ) : pa.volatility ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A] text-[10px] font-bold uppercase tracking-wider">
-                        <AlertCircle className="w-3 h-3 text-[#D97706]" /> Volatile
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#FEF3C7] dark:bg-[#78350F] text-[#92400E] dark:text-[#FDE68A] border border-[#FDE68A] dark:border-[#B45309] text-[10px] font-bold uppercase tracking-wider">
+                        <AlertCircle className="w-3 h-3 text-[#D97706] dark:text-[#FBBF24]" /> Volatile
                       </span>
                     ) : pa.mentionRate === 1 ? (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#ECFDF5] text-[#065F46] border border-[#A7F3D0] text-[10px] font-bold uppercase tracking-wider">
-                        <CheckCircle2 className="w-3 h-3 text-[#059669]" /> Stable (100%)
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#ECFDF5] dark:bg-[#064E3B] text-[#065F46] dark:text-[#A7F3D0] border border-[#A7F3D0] dark:border-[#065F46] text-[10px] font-bold uppercase tracking-wider">
+                        <CheckCircle2 className="w-3 h-3 text-[#059669] dark:text-[#34D399]" /> Stable (100%)
                       </span>
                     ) : (
-                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#F3F4F6] text-[#6B7280] border border-[#E5E7EB] text-[10px] font-bold uppercase tracking-wider">
-                        <XCircle className="w-3 h-3 text-[#9CA3AF]" /> 0% (Missing)
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#F3F4F6] dark:bg-[#1E293B] text-[#6B7280] dark:text-[#94A3B8] border border-[#E5E7EB] dark:border-[#334155] text-[10px] font-bold uppercase tracking-wider">
+                        <XCircle className="w-3 h-3 text-[#9CA3AF] dark:text-[#64748B]" /> 0% (Missing)
                       </span>
                     )}
                   </td>

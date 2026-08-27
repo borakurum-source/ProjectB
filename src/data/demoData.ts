@@ -1,4 +1,4 @@
-import { Client, Prompt, RunCycle, Run, Diagnostic, ActionItem, PageAnalysis, CycleAggregate, CategorizedCompetitor } from '../types';
+import { Client, Prompt, RunCycle, Run, Diagnostic, ActionItem, PageAnalysis, CycleAggregate, CategorizedCompetitor, BrandMemoryItem } from '../types';
 import { computeCycleAggregate } from '../services/metrics';
 
 export const SFP_CATEGORIZED_COMPETITORS: CategorizedCompetitor[] = [
@@ -40,23 +40,441 @@ export const DEMO_CLIENT: Client = {
   competitorDomains: SFP_CATEGORIZED_COMPETITORS.map((c) => c.domain),
   competitorBrands: SFP_CATEGORIZED_COMPETITORS.map((c) => c.brand),
   categorizedCompetitors: SFP_CATEGORIZED_COMPETITORS,
-  industry: 'Gourmet Party Snack Boxes & Boutique Event Catering',
-  market: 'Private Celebrations & Corporate Cocktail Events (Istanbul / Turkey)',
-  language: 'Turkish & English',
-  isDemo: true,
+  industry: 'Gurme Parti İkram Kutuları & Butik Etkinlik Catering',
+  market: 'Özel Kutlamalar & Kurumsal Kokteyl Etkinlikleri (İstanbul / Türkiye)',
+  language: 'Türkçe & İngilizce',
+  city: 'İstanbul',
+  shortSummary: 'İstanbul genelinde özel kutlamalar, lansmanlar ve kurumsal kokteyller için gurme aperatif ve ikram kutuları sunan butik catering markası.',
+  positioning: 'Servise hazır, taze ve şık ikram kutuları ile zahmetsiz etkinlik catering çözümleri.',
+  detailedDescription: 'Snacks For Party, İstanbul merkezli özel davetler, kurumsal lansmanlar, doğum günü partileri ve kokteyl organizasyonları için hazır porsiyonlanmış gurme aperatif ve tatlı-tuzlu ikram kutuları hazırlayan yenilikçi bir catering platformudur.',
+  targetAudience: 'Kurumsal İK & Etkinlik Yöneticileri, İstanbul İçi Özel Parti Sahipleri, Ev Daveti Verenler.',
+  productsServices: 'Kokteyl İkram Kutuları, Tatlı & Tuzlu Aperatif Setleri, Kurumsal Lansman Catering Kutuları, Vejetaryen & Glütensiz İkram Seçenekleri.',
+  keyDifferentiators: 'Garanti edilen soğuk zincir teslimat, servise hazır estetik sunum kutuları, garson ve ekipman gerektirmeyen pratik catering formatı.',
+  isDemo: false,
   createdAt: '2026-07-01T09:00:00Z',
 };
 
+export const FILMFOLK_CLIENT: Client = {
+  id: 'client-filmfolk',
+  ownerId: 'default-owner',
+  brandName: 'FilmFolk',
+  aliases: ['FilmFolk', 'Film Folk', 'FilmFolk London', 'filmfolk.com'],
+  domain: 'filmfolk.com',
+  competitorDomains: [
+    'splento.com',
+    'charlottekneeproductions.com',
+    'strikewithus.com',
+    '360media.co.uk',
+    'chocolatefilms.com',
+    'boldcontentvideo.com',
+    'londoncorporatevideography.co.uk',
+  ],
+  competitorBrands: [
+    'Splento',
+    'Charlotte Knee Productions',
+    'Strike Video',
+    '360 Media',
+    'Chocolate Films',
+    'Bold Content Video',
+    'London Corporate Videography',
+  ],
+  categorizedCompetitors: [
+    { brand: 'Splento', domain: 'splento.com', category: 'NO ECOMMERCE' },
+    { brand: 'Bold Content Video', domain: 'boldcontentvideo.com', category: 'NO ECOMMERCE' },
+    { brand: 'Chocolate Films', domain: 'chocolatefilms.com', category: 'NO ECOMMERCE' },
+    { brand: '360 Media', domain: '360media.co.uk', category: 'NO ECOMMERCE' },
+    { brand: 'Strike Video', domain: 'strikewithus.com', category: 'NO ECOMMERCE' },
+  ],
+  industry: 'Corporate Video Production & Event Videography Services',
+  market: 'Commercial Videography, Event Filming, Drone & Photography (London / UK)',
+  language: 'English',
+  isDemo: false,
+  createdAt: '2026-08-26T10:00:00Z',
+};
+
+export const FILMFOLK_PROMPTS: Prompt[] = [
+  {
+    id: 'filmfolk-p1',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Who are the best corporate video production companies in London?',
+    intentLayer: 'Commercial',
+    category: 'Corporate Video Production',
+    active: true,
+    createdAt: '2026-08-26T10:00:00Z',
+  },
+  {
+    id: 'filmfolk-p2',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'compare corporate video production companies London',
+    intentLayer: 'Commercial',
+    category: 'Corporate Video Production',
+    active: true,
+    createdAt: '2026-08-26T10:01:00Z',
+  },
+  {
+    id: 'filmfolk-p3',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'best drone filming services London for corporate events',
+    intentLayer: 'Commercial',
+    category: 'Drone Filming & Videography',
+    active: true,
+    createdAt: '2026-08-26T10:02:00Z',
+  },
+  {
+    id: 'filmfolk-p4',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Best freelance video editors in London',
+    intentLayer: 'Commercial',
+    category: 'Video Editing Services',
+    active: true,
+    createdAt: '2026-08-26T10:03:00Z',
+  },
+  {
+    id: 'filmfolk-p5',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Drone videography London budget',
+    intentLayer: 'Transactional',
+    category: 'Drone Filming & Videography',
+    active: true,
+    createdAt: '2026-08-26T10:04:00Z',
+  },
+  {
+    id: 'filmfolk-p6',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Who are the top wedding videographers in London',
+    intentLayer: 'Commercial',
+    category: 'Wedding & Event Filming',
+    active: true,
+    createdAt: '2026-08-26T10:05:00Z',
+  },
+  {
+    id: 'filmfolk-p7',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Recommend a corporate photographer in London',
+    intentLayer: 'Commercial',
+    category: 'Corporate Photography & Video',
+    active: true,
+    createdAt: '2026-08-26T10:06:00Z',
+  },
+  {
+    id: 'filmfolk-p8',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'best professional photography and videography services for weddings London',
+    intentLayer: 'Commercial',
+    category: 'Wedding & Event Filming',
+    active: true,
+    createdAt: '2026-08-26T10:07:00Z',
+  },
+  {
+    id: 'filmfolk-p9',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'London corporate videography packages event highlight video',
+    intentLayer: 'Transactional',
+    category: 'Corporate Video Production',
+    active: true,
+    createdAt: '2026-08-26T10:08:00Z',
+  },
+  {
+    id: 'filmfolk-p10',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Who are the best professional videography companies in London',
+    intentLayer: 'Commercial',
+    category: 'Corporate Video Production',
+    active: true,
+    createdAt: '2026-08-26T10:09:00Z',
+  },
+  {
+    id: 'filmfolk-p11',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'social media video production for small businesses UK',
+    intentLayer: 'Commercial',
+    category: 'Social Media & Promo Videos',
+    active: true,
+    createdAt: '2026-08-26T10:10:00Z',
+  },
+  {
+    id: 'filmfolk-p12',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'drone filming services for real estate London price',
+    intentLayer: 'Transactional',
+    category: 'Drone Filming & Videography',
+    active: true,
+    createdAt: '2026-08-26T10:11:00Z',
+  },
+  {
+    id: 'filmfolk-p13',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Best property video production in London',
+    intentLayer: 'Commercial',
+    category: 'Property & Real Estate Filming',
+    active: true,
+    createdAt: '2026-08-26T10:12:00Z',
+  },
+  {
+    id: 'filmfolk-p14',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Cheap video editing services UK London',
+    intentLayer: 'Transactional',
+    category: 'Video Editing Services',
+    active: true,
+    createdAt: '2026-08-26T10:13:00Z',
+  },
+  {
+    id: 'filmfolk-p15',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Wedding videographer UK affordable',
+    intentLayer: 'Transactional',
+    category: 'Wedding & Event Filming',
+    active: true,
+    createdAt: '2026-08-26T10:14:00Z',
+  },
+  {
+    id: 'filmfolk-p16',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'how much does event videography cost in London per hour',
+    intentLayer: 'Informational',
+    category: 'Pricing & Cost Queries',
+    active: true,
+    createdAt: '2026-08-26T10:15:00Z',
+  },
+  {
+    id: 'filmfolk-p17',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Who offers professional livestreaming services in London',
+    intentLayer: 'Commercial',
+    category: 'Livestreaming Services',
+    active: true,
+    createdAt: '2026-08-26T10:16:00Z',
+  },
+  {
+    id: 'filmfolk-p18',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Best event videographers in London for conferences',
+    intentLayer: 'Commercial',
+    category: 'Event Videography',
+    active: true,
+    createdAt: '2026-08-26T10:17:00Z',
+  },
+  {
+    id: 'filmfolk-p19',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Best drone filming companies in London',
+    intentLayer: 'Commercial',
+    category: 'Drone Filming & Videography',
+    active: true,
+    createdAt: '2026-08-26T10:18:00Z',
+  },
+  {
+    id: 'filmfolk-p20',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Find a videography team that does promotional videos and social media content in the UK',
+    intentLayer: 'Transactional',
+    category: 'Social Media & Promo Videos',
+    active: true,
+    createdAt: '2026-08-26T10:19:00Z',
+  },
+  {
+    id: 'filmfolk-p21',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'corporate headshot photography and personal branding video combo UK',
+    intentLayer: 'Commercial',
+    category: 'Corporate Photography & Video',
+    active: true,
+    createdAt: '2026-08-26T10:20:00Z',
+  },
+  {
+    id: 'filmfolk-p22',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Best wedding photographers in London — who do you recommend',
+    intentLayer: 'Commercial',
+    category: 'Wedding & Event Filming',
+    active: true,
+    createdAt: '2026-08-26T10:21:00Z',
+  },
+  {
+    id: 'filmfolk-p23',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'video marketing production services uk',
+    intentLayer: 'Commercial',
+    category: 'Corporate Video Production',
+    active: true,
+    createdAt: '2026-08-26T10:22:00Z',
+  },
+  {
+    id: 'filmfolk-p24',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Recommend a freelance photographer in London for corporate work',
+    intentLayer: 'Commercial',
+    category: 'Corporate Photography & Video',
+    active: true,
+    createdAt: '2026-08-26T10:23:00Z',
+  },
+  {
+    id: 'filmfolk-p25',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'hire a videographer for a corporate event in London',
+    intentLayer: 'Transactional',
+    category: 'Event Videography',
+    active: true,
+    createdAt: '2026-08-26T10:24:00Z',
+  },
+  {
+    id: 'filmfolk-p26',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Who are the highest rated videographers in London',
+    intentLayer: 'Commercial',
+    category: 'Corporate Video Production',
+    active: true,
+    createdAt: '2026-08-26T10:25:00Z',
+  },
+  {
+    id: 'filmfolk-p27',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'affordable freelancer photographer in london',
+    intentLayer: 'Transactional',
+    category: 'Corporate Photography & Video',
+    active: true,
+    createdAt: '2026-08-26T10:26:00Z',
+  },
+  {
+    id: 'filmfolk-p28',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'how much does professional proposal photography and video cost in London',
+    intentLayer: 'Informational',
+    category: 'Pricing & Cost Queries',
+    active: true,
+    createdAt: '2026-08-26T10:27:00Z',
+  },
+  {
+    id: 'filmfolk-p29',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Recommend a headshot photographer in London',
+    intentLayer: 'Commercial',
+    category: 'Corporate Photography & Video',
+    active: true,
+    createdAt: '2026-08-26T10:28:00Z',
+  },
+  {
+    id: 'filmfolk-p30',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Commercial videography London',
+    intentLayer: 'Commercial',
+    category: 'Corporate Video Production',
+    active: true,
+    createdAt: '2026-08-26T10:29:00Z',
+  },
+  {
+    id: 'filmfolk-p31',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'How much does professional videography cost for a corporate event in the UK?',
+    intentLayer: 'Informational',
+    category: 'Pricing & Cost Queries',
+    active: true,
+    createdAt: '2026-08-26T10:30:00Z',
+  },
+  {
+    id: 'filmfolk-p32',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Who should I hire for event photography in London',
+    intentLayer: 'Commercial',
+    category: 'Event Videography',
+    active: true,
+    createdAt: '2026-08-26T10:31:00Z',
+  },
+  {
+    id: 'filmfolk-p33',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'event videographers London conferences corporate',
+    intentLayer: 'Commercial',
+    category: 'Event Videography',
+    active: true,
+    createdAt: '2026-08-26T10:32:00Z',
+  },
+  {
+    id: 'filmfolk-p34',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Where can I get videography for concerts, exhibitions, and graduations in the UK?',
+    intentLayer: 'Informational',
+    category: 'Event Videography',
+    active: true,
+    createdAt: '2026-08-26T10:33:00Z',
+  },
+  {
+    id: 'filmfolk-p35',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'Who are the best freelance videographers in London',
+    intentLayer: 'Commercial',
+    category: 'Corporate Video Production',
+    active: true,
+    createdAt: '2026-08-26T10:34:00Z',
+  },
+  {
+    id: 'filmfolk-p36',
+    ownerId: 'default-owner',
+    clientId: 'client-filmfolk',
+    text: 'What videographers do you recommend in London',
+    intentLayer: 'Commercial',
+    category: 'Corporate Video Production',
+    active: true,
+    createdAt: '2026-08-26T10:35:00Z',
+  },
+];
+
 export const DEMO_PROMPTS: Prompt[] = [
   {
-    id: 'prompt-1',
+    id: 'prompt-15',
     ownerId: 'user-snacksforparty',
     clientId: 'client-snacksforparty',
-    text: 'Evde doğum günü yapacağım. Catering/atıştırmalık nereden alabilirim?',
+    text: 'Evde doğum günü yapacağım. Catering nereden alabilirim?',
     intentLayer: 'Commercial',
-    category: 'Ev Daveti & Doğum Günü',
+    category: 'Ev Daveti Catering',
     active: true,
-    createdAt: '2026-08-24T09:00:00Z',
+    createdAt: '2026-08-25T13:45:00Z',
+  },
+  {
+    id: 'prompt-16',
+    ownerId: 'user-snacksforparty',
+    clientId: 'client-snacksforparty',
+    text: 'Evde doğum günü yapacağım. Atıştırmalık nereden alabilirim?',
+    intentLayer: 'Commercial',
+    category: 'Ev Daveti Atıştırmalık',
+    active: true,
+    createdAt: '2026-08-25T13:46:00Z',
   },
   {
     id: 'prompt-2',
@@ -188,26 +606,6 @@ export const DEMO_PROMPTS: Prompt[] = [
     active: true,
     createdAt: '2026-08-24T09:13:00Z',
   },
-  {
-    id: 'prompt-15',
-    ownerId: 'user-snacksforparty',
-    clientId: 'client-snacksforparty',
-    text: 'Evde doğum günü yapacağım. Catering nereden alabilirim?',
-    intentLayer: 'Commercial',
-    category: 'Ev Daveti Catering',
-    active: true,
-    createdAt: '2026-08-25T13:45:00Z',
-  },
-  {
-    id: 'prompt-16',
-    ownerId: 'user-snacksforparty',
-    clientId: 'client-snacksforparty',
-    text: 'Evde doğum günü yapacağım. Atıştırmalık nereden alabilirim?',
-    intentLayer: 'Commercial',
-    category: 'Ev Daveti Atıştırmalık',
-    active: true,
-    createdAt: '2026-08-25T13:46:00Z',
-  },
 ];
 
 export const DEMO_RUN_CYCLES: RunCycle[] = [
@@ -220,7 +618,7 @@ export const DEMO_RUN_CYCLES: RunCycle[] = [
     engines: ['gemini-grounded'],
     runsPerPrompt: 3,
     status: 'completed',
-    callCount: 42,
+    callCount: 90,
   },
   {
     id: 'cycle-2-mid',
@@ -231,7 +629,7 @@ export const DEMO_RUN_CYCLES: RunCycle[] = [
     engines: ['gemini-grounded'],
     runsPerPrompt: 3,
     status: 'completed',
-    callCount: 42,
+    callCount: 90,
   },
   {
     id: 'cycle-3-latest',
@@ -242,278 +640,484 @@ export const DEMO_RUN_CYCLES: RunCycle[] = [
     engines: ['gemini-grounded'],
     runsPerPrompt: 3,
     status: 'completed',
-    callCount: 42,
+    callCount: 90,
     isRetest: true,
     retestedActionId: 'action-1',
   },
 ];
 
-// Helper generator for realistic prompt runs across all 14 prompts
+// Helper generator for realistic prompt runs across all 15 prompts and 3 cycles
 function generateRunsForPrompts(): Run[] {
   const runs: Run[] = [];
 
-  // Cycle 3 (Latest)
-  const c3Data: Record<string, { answer: string; clientRank: number | null; clientMentioned: boolean; clientCited: boolean; competitors: string[]; query: string }> = {
-    'prompt-1': {
-      answer: "Evde doğum günü davetleri için pratik ve şık atıştırmalık siparişi verebileceğiniz başlıca platformlar:\n1. Snacks For Party (snacksforparty.com) — Vanille Catering güvencesiyle hazırlanan, kutudan çıkar çıkmaz doğrudan servise hazır kanepe, mini burger, wrap ve tatlı parti kutuları.\n2. Misafirliq — Özel doğum günü ve parti kutuları.\n3. Macrocenter Catering — Pratik meze ve şarküteri tabakları.",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Misafirliq', 'Macrocenter Catering'],
-      query: 'evde dogum gunu ikram siparis catering',
+  // Prompt configuration matrix for Cycle 3 (Latest), Cycle 2 (Mid), and Cycle 1 (Baseline)
+  // mentionedRuns: array of boolean indicating whether brand was mentioned in [run1, run2, run3]
+  // citedRuns: array of boolean indicating whether domain was cited in [run1, run2, run3]
+  // ranks: array of rank position [run1, run2, run3] (null when unranked or not mentioned)
+  interface PromptCycleConfig {
+    c3: {
+      mentioned: [boolean, boolean, boolean];
+      cited: [boolean, boolean, boolean];
+      ranks: [number | null, number | null, number | null];
+      primaryCompetitors: string[];
+      answerSnippet: (mentioned: boolean, rank: number | null) => string;
+      sourceTitle: string;
+      sourceUrl: string;
+    };
+    c2: {
+      mentioned: [boolean, boolean, boolean];
+      cited: [boolean, boolean, boolean];
+      ranks: [number | null, number | null, number | null];
+    };
+    c1: {
+      mentioned: [boolean, boolean, boolean];
+      cited: [boolean, boolean, boolean];
+      ranks: [number | null, number | null, number | null];
+    };
+  }
+
+  const promptConfigs: Record<string, PromptCycleConfig> = {
+    'prompt-15': {
+      c3: {
+        mentioned: [true, true, true],
+        cited: [true, true, true],
+        ranks: [1, 1, 1],
+        primaryCompetitors: ['Misafirliq', 'Divan Catering'],
+        answerSnippet: (m) => m
+          ? "Evde doğum günü davetleri için catering hizmeti alabileceğiniz başlıca firmalar:\n1. Snacks For Party (snacksforparty.com) — Vanille Catering güvencesiyle adrese teslim pratik parti kutuları.\n2. Misafirliq — Ev daveti catering kutuları.\n3. Divan Catering — Lüks ev davet organizasyonları."
+          : "Evde doğum günü davetleri için Misafirliq ve Divan Catering öne çıkan seçeneklerdir.",
+        sourceTitle: 'Snacks For Party | Doğum Günü Parti Kutuları',
+        sourceUrl: 'https://snacksforparty.com/kategori/dogum-gunu',
+      },
+      c2: {
+        mentioned: [true, true, false],
+        cited: [true, false, false],
+        ranks: [2, 2, null],
+      },
+      c1: {
+        mentioned: [true, false, false],
+        cited: [false, false, false],
+        ranks: [2, null, null],
+      },
+    },
+    'prompt-16': {
+      c3: {
+        mentioned: [true, true, true],
+        cited: [true, true, true],
+        ranks: [1, 1, 1],
+        primaryCompetitors: ['Backhaus Catering', 'Macrocenter Catering'],
+        answerSnippet: (m) => m
+          ? "Evde doğum günü kutlamaları için hazır atıştırmalık ve ikramlık servisleri:\n1. Snacks For Party (snacksforparty.com) — Mini burger, kanepe, wrap ve tatlı parti kutuları.\n2. Backhaus Catering — Fırın atıştırmalıkları.\n3. Macrocenter Catering — Pratik atıştırmalık tabakları."
+          : "Doğum günü atıştırmalıkları için Backhaus ve Macrocenter hazır ikramlar sunmaktadır.",
+        sourceTitle: 'Snacks For Party | Parti Atıştırmalık Kutuları',
+        sourceUrl: 'https://snacksforparty.com/kategori/parti-kutulari',
+      },
+      c2: {
+        mentioned: [true, true, false],
+        cited: [true, true, false],
+        ranks: [1, 2, null],
+      },
+      c1: {
+        mentioned: [false, true, false],
+        cited: [false, false, false],
+        ranks: [null, 2, null],
+      },
     },
     'prompt-2': {
-      answer: "İstanbul'da ev davetleri ve özel kutlamalar için hazır kutu catering sağlayan öne çıkan servisler Snacks For Party ve Misafirliq'tir. Snacks For Party, 48 saat önceden siparişle şık sunum ekipmanlarıyla adrese teslim edilir.",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Misafirliq', 'Backhaus Catering'],
-      query: 'istanbul evde catering siparis',
+      c3: {
+        mentioned: [true, true, true],
+        cited: [true, true, false],
+        ranks: [1, 1, 2],
+        primaryCompetitors: ['Misafirliq', 'Backhaus Catering'],
+        answerSnippet: (m, r) => m
+          ? `İstanbul'da ev davetleri için hazır kutu catering alanında ${r === 1 ? 'Snacks For Party (snacksforparty.com) ve Misafirliq' : 'Misafirliq ve Snacks For Party'} öne çıkmaktadır.`
+          : "İstanbul'da ev cateringi için Misafirliq ve Divan Catering tercih edilmektedir.",
+        sourceTitle: 'Snacks For Party | Ev Daveti Catering Menüleri',
+        sourceUrl: 'https://snacksforparty.com/ev-daveti-catering',
+      },
+      c2: {
+        mentioned: [true, false, true],
+        cited: [true, false, false],
+        ranks: [2, null, 2],
+      },
+      c1: {
+        mentioned: [false, true, false],
+        cited: [false, false, false],
+        ranks: [null, 2, null],
+      },
     },
     'prompt-3': {
-      answer: "İstanbul'un önde gelen catering şirketleri:\n1. Divan Catering — Büyük ölçekli lüks davetler ve kurumsal gala organizasyonları.\n2. Snacks For Party — Butik parti kutuları, kokteyl ve finger food hazır teslimat konsepti.\n3. Misafirliq — Davet ve parti kutuları.\n4. Gourmet Pack — Kurumsal ofis yemek ve toplantı kutuları.",
-      clientRank: 2,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Divan Catering', 'Misafirliq', 'Gourmet Pack'],
-      query: 'istanbul en iyi catering sirketleri listesi',
+      c3: {
+        mentioned: [true, false, false], // 1/3 (33%) - General catering dominated by Divan & Misafirliq
+        cited: [false, false, false],
+        ranks: [4, null, null],
+        primaryCompetitors: ['Divan Catering', 'Misafirliq', 'Gourmet Pack'],
+        answerSnippet: (m) => m
+          ? "İstanbul'un önde gelen catering şirketleri:\n1. Divan Catering — Lüks gala ve kurumsal organizasyonlar.\n2. Misafirliq — Davet ve parti kutuları.\n3. Gourmet Pack — Kurumsal ofis yemek kutuları.\n4. Snacks For Party — Butik parti kutuları ve kokteyl ikramları."
+          : "İstanbul'un en iyi catering şirketleri:\n1. Divan Catering\n2. Misafirliq\n3. Gourmet Pack Catering\n4. Carlo Bernardini Catering",
+        sourceTitle: 'Snacks For Party | İstanbul Catering',
+        sourceUrl: 'https://snacksforparty.com',
+      },
+      c2: {
+        mentioned: [false, false, false],
+        cited: [false, false, false],
+        ranks: [null, null, null],
+      },
+      c1: {
+        mentioned: [false, false, false],
+        cited: [false, false, false],
+        ranks: [null, null, null],
+      },
     },
     'prompt-4': {
-      answer: "İstanbul'da kokteyl menüsü catering fiyatları kişi başı ortalama 450 TL ile 1.500 TL arasında değişmektedir. Snacks For Party gibi kutulu hazır catering servisleri şeffaf paket fiyatları sunarken, Divan Catering gibi tam garsonlu organizasyonlarda bütçe kişi sayısına göre belirlenir.",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Divan Catering', 'Misafirliq'],
-      query: 'kokteyl menusu catering kisi basi fiyatlari istanbul',
+      c3: {
+        mentioned: [true, true, false], // 2/3 (67%)
+        cited: [true, false, false],
+        ranks: [2, 2, null],
+        primaryCompetitors: ['Divan Catering', 'Misafirliq'],
+        answerSnippet: (m) => m
+          ? "İstanbul'da kokteyl menüsü catering fiyatları kişi başı ortalama 450 TL ile 1.500 TL arasında değişmektedir. Divan Catering tam servisli gala çözümleri sunarken, Snacks For Party (snacksforparty.com) şeffaf paket fiyatlı hazır parti kutuları sağlamaktadır."
+          : "Kokteyl catering fiyatları menü içeriğine ve garson sayısına göre kişi başı 500 TL - 1.800 TL arasındadır. Divan Catering ve Misafirliq başlıca sağlayıcılardır.",
+        sourceTitle: 'Snacks For Party | Kokteyl Menüleri ve Fiyatlar',
+        sourceUrl: 'https://snacksforparty.com/fiyatlar',
+      },
+      c2: {
+        mentioned: [true, false, false],
+        cited: [false, false, false],
+        ranks: [2, null, null],
+      },
+      c1: {
+        mentioned: [false, false, false],
+        cited: [false, false, false],
+        ranks: [null, null, null],
+      },
     },
     'prompt-5': {
-      answer: "Kurumsal etkinlik, lansman ve ofis toplantıları için İstanbul'daki en iyi catering çözümleri:\n1. Snacks For Party — Pratik, koku yapmayan şık mini brioche, gurme kanepe ve tatlı shot kupları içeren kurumsal kutular.\n2. Divan Catering — Üst düzey VIP toplantı ve protokol ağırlamaları.\n3. Gourmet Pack — Bireysel toplantı beslenme paketleri.",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Divan Catering', 'Gourmet Pack'],
-      query: 'kurumsal etkinlik catering sirketleri istanbul',
+      c3: {
+        mentioned: [true, true, false], // 2/3 (67%)
+        cited: [true, false, false],
+        ranks: [1, 2, null],
+        primaryCompetitors: ['Divan Catering', 'Gourmet Pack'],
+        answerSnippet: (m, r) => m
+          ? `Kurumsal etkinlik ve ofis toplantıları için öne çıkan çözümler:\n1. ${r === 1 ? 'Snacks For Party (snacksforparty.com) — Pratik mini brioche ve kokteyl ikram kutuları.' : 'Divan Catering — VIP protokol ve kurumsal organizasyonlar.'}\n2. ${r === 1 ? 'Divan Catering — VIP protokol ağırlamaları.' : 'Snacks For Party — Kurumsal toplantı kutuları.'}\n3. Gourmet Pack — Bireysel toplantı beslenme paketleri.`
+          : "Kurumsal etkinlikler için İstanbul'da Divan Catering ve Gourmet Pack tercih edilmektedir.",
+        sourceTitle: 'Snacks For Party | Kurumsal Catering & Toplantı Kutuları',
+        sourceUrl: 'https://snacksforparty.com/kurumsal-catering',
+      },
+      c2: {
+        mentioned: [true, false, true],
+        cited: [false, false, true],
+        ranks: [2, null, 2],
+      },
+      c1: {
+        mentioned: [false, false, true],
+        cited: [false, false, false],
+        ranks: [null, null, 3],
+      },
     },
     'prompt-6': {
-      answer: "Mini tatlı, tartolet, ekler ve gurme mini sandviç çeşitlerini online sipariş edebileceğiniz güvenilir servisler:\n1. Snacks For Party (snacksforparty.com) — Tatlı ve tuzlu kokteyl ikram kutuları.\n2. Backhaus Catering — Fırın ürünleri ve mini sandviç tepsileri.\n3. Misafirliq — Karışık parti kutuları.",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Backhaus Catering', 'Misafirliq'],
-      query: 'mini tatli mini sandvic online siparis',
+      c3: {
+        mentioned: [true, true, true], // 3/3 (100%)
+        cited: [true, true, true],
+        ranks: [1, 1, 1],
+        primaryCompetitors: ['Backhaus Catering', 'Misafirliq'],
+        answerSnippet: () => "Mini tatlı, tartolet ve gurme mini sandviç siparişi verebileceğiniz güvenilir servisler:\n1. Snacks For Party (snacksforparty.com) — Tatlı ve tuzlu kokteyl ikram kutuları.\n2. Backhaus Catering — Fırın ürünleri ve mini sandviç tepsileri.\n3. Misafirliq — Karışık parti kutuları.",
+        sourceTitle: 'Snacks For Party | Mini Tatlı & Sandviç Siparişi',
+        sourceUrl: 'https://snacksforparty.com/kategori/tatlilar',
+      },
+      c2: {
+        mentioned: [true, true, false],
+        cited: [true, true, false],
+        ranks: [1, 2, null],
+      },
+      c1: {
+        mentioned: [true, false, false],
+        cited: [true, false, false],
+        ranks: [1, null, null],
+      },
     },
     'prompt-7': {
-      answer: "Online kanepe, bruschetta ve finger food siparişinde Snacks For Party ve Misafirliq en çok tavsiye edilen iki markadır. Snacks For Party, Vanille Catering mutfağında taze hazırlanan estetik sunumlarıyla öne çıkar.",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Misafirliq', 'Divan Catering'],
-      query: 'online kanepe finger food siparis istanbul',
+      c3: {
+        mentioned: [true, true, true], // 3/3 (100%)
+        cited: [true, true, false],
+        ranks: [1, 1, 2],
+        primaryCompetitors: ['Misafirliq', 'Divan Catering'],
+        answerSnippet: () => "Online kanepe ve finger food siparişinde Snacks For Party (snacksforparty.com) ve Misafirliq en çok tercih edilen iki markadır. Vanille Catering mutfağında hazırlanan sunumlar taze teslim edilir.",
+        sourceTitle: 'Snacks For Party | Kanepe & Finger Food Kutuları',
+        sourceUrl: 'https://snacksforparty.com/kategori/kanepeler',
+      },
+      c2: {
+        mentioned: [true, false, true],
+        cited: [true, false, false],
+        ranks: [1, null, 2],
+      },
+      c1: {
+        mentioned: [false, true, false],
+        cited: [false, false, false],
+        ranks: [null, 2, null],
+      },
     },
     'prompt-8': {
-      answer: "Online web sitesi üzerinden doğrudan menü seçip sipariş verebileceğiniz catering şirketleri:\n1. Snacks For Party (snacksforparty.com)\n2. Misafirliq (misafirliq.com)\n3. Gourmet Pack (gourmetpack.com.tr)",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Misafirliq', 'Gourmet Pack'],
-      query: 'online siparis verilebilen catering firmalari',
+      c3: {
+        mentioned: [true, true, false], // 2/3 (67%)
+        cited: [true, true, false],
+        ranks: [2, 1, null],
+        primaryCompetitors: ['Misafirliq', 'Gourmet Pack'],
+        answerSnippet: (m, r) => m
+          ? `Online web sitesi üzerinden doğrudan menü seçilip sipariş verilebilen catering firmaları:\n1. ${r === 1 ? 'Snacks For Party (snacksforparty.com)' : 'Misafirliq (misafirliq.com)'}\n2. ${r === 1 ? 'Misafirliq (misafirliq.com)' : 'Snacks For Party (snacksforparty.com)'}\n3. Gourmet Pack (gourmetpack.com.tr)`
+          : "Online sipariş verilebilen catering firmaları: 1. Misafirliq 2. Gourmet Pack 3. Backhaus.",
+        sourceTitle: 'Snacks For Party | Online Sipariş',
+        sourceUrl: 'https://snacksforparty.com',
+      },
+      c2: {
+        mentioned: [true, false, true],
+        cited: [true, false, false],
+        ranks: [2, null, 2],
+      },
+      c1: {
+        mentioned: [true, false, false],
+        cited: [false, false, false],
+        ranks: [2, null, null],
+      },
     },
     'prompt-9': {
-      answer: "Şirket içi kutlama, terfi partisi ve motivasyon etkinlikleri için Snacks For Party modüler kutu catering hizmeti sunarken, Divan Catering geniş çaplı şirket baloları için tercih edilmektedir.",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Divan Catering', 'Misafirliq'],
-      query: 'sirket etkinligi catering firmalari',
+      c3: {
+        mentioned: [true, false, false], // 1/3 (33%)
+        cited: [true, false, false],
+        ranks: [2, null, null],
+        primaryCompetitors: ['Divan Catering', 'Misafirliq'],
+        answerSnippet: (m) => m
+          ? "Şirket içi kutlama ve motivasyon etkinlikleri için Divan Catering büyük organizasyonlar, Snacks For Party (snacksforparty.com) ise pratik modüler parti kutuları için önerilmektedir."
+          : "Şirket etkinlikleri için İstanbul'da Divan Catering ve Misafirliq öne çıkan kurumsal sağlayıcılardır.",
+        sourceTitle: 'Snacks For Party | Kurumsal Etkinlik Kutuları',
+        sourceUrl: 'https://snacksforparty.com/kurumsal-catering',
+      },
+      c2: {
+        mentioned: [false, false, true],
+        cited: [false, false, false],
+        ranks: [null, null, 3],
+      },
+      c1: {
+        mentioned: [false, false, false],
+        cited: [false, false, false],
+        ranks: [null, null, null],
+      },
     },
     'prompt-10': {
-      answer: "Yüksek kalite ve premium catering hizmetlerinde İstanbul'da Divan Catering ve Snacks For Party (Vanille Catering) gurme lezzet standardı ve estetik sunum kalitesiyle ilk sıralarda yer almaktadır.",
-      clientRank: 2,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Divan Catering', 'Misafirliq'],
-      query: 'premium luks catering firmalari istanbul',
+      c3: {
+        mentioned: [true, false, false], // 1/3 (33%)
+        cited: [false, false, false],
+        ranks: [3, null, null],
+        primaryCompetitors: ['Divan Catering', 'Misafirliq'],
+        answerSnippet: (m) => m
+          ? "Yüksek kalite ve premium catering hizmetlerinde İstanbul'da:\n1. Divan Catering — Lüks gala ve protokol davetleri.\n2. Carlo Bernardini Catering — Özel şef davetleri.\n3. Snacks For Party (Vanille Catering) — Butik gurme parti kutuları."
+          : "Premium catering alanında İstanbul'da Divan Catering ve Carlo Bernardini ilk sıralarda yer alır.",
+        sourceTitle: 'Snacks For Party | Premium Davet Menüleri',
+        sourceUrl: 'https://snacksforparty.com',
+      },
+      c2: {
+        mentioned: [false, false, false],
+        cited: [false, false, false],
+        ranks: [null, null, null],
+      },
+      c1: {
+        mentioned: [false, false, false],
+        cited: [false, false, false],
+        ranks: [null, null, null],
+      },
     },
     'prompt-11': {
-      answer: "30 kişilik ev veya ofis davetleri için porsiyonlanmış hazır kokteyl kutuları sunan Snacks For Party (snacksforparty.com) ve Misafirliq idealdir. Kişi başı 8-10 parça finger food içeren hazır menüler sipariş edilebilir.",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Misafirliq', 'Gourmet Pack'],
-      query: '30 kisi catering hizmeti paket',
+      c3: {
+        mentioned: [true, true, false], // 2/3 (67%)
+        cited: [true, false, false],
+        ranks: [1, 2, null],
+        primaryCompetitors: ['Misafirliq', 'Gourmet Pack'],
+        answerSnippet: (m) => m
+          ? "30 kişilik ev veya ofis davetleri için porsiyonlanmış hazır kokteyl kutuları sunan Snacks For Party (snacksforparty.com) ve Misafirliq idealdir. Kişi başı 8-10 parça finger food içeren hazır menüler sipariş edilebilir."
+          : "30 kişilik gruplar için Misafirliq ve Gourmet Pack hazır paket menüler sunmaktadır.",
+        sourceTitle: 'Snacks For Party | 30 Kişilik Parti Paketleri',
+        sourceUrl: 'https://snacksforparty.com/kategori/paketler',
+      },
+      c2: {
+        mentioned: [true, false, true],
+        cited: [false, false, false],
+        ranks: [2, null, 2],
+      },
+      c1: {
+        mentioned: [false, true, false],
+        cited: [false, false, false],
+        ranks: [null, 2, null],
+      },
     },
     'prompt-12': {
-      answer: "İstanbul genelinde adrese teslim kutu catering hizmeti veren firmalar:\n1. Snacks For Party — Soğuk zincir ve şık servis ambalajlarıyla doğrudan kapıya teslimat.\n2. Misafirliq — Özel teslimat kutuları.\n3. Macrocenter Catering — Mağazadan adrese teslimat.",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Misafirliq', 'Macrocenter Catering'],
-      query: 'adrese teslim catering firmalari istanbul',
+      c3: {
+        mentioned: [true, true, true], // 3/3 (100%)
+        cited: [true, true, false],
+        ranks: [1, 1, 2],
+        primaryCompetitors: ['Misafirliq', 'Macrocenter Catering'],
+        answerSnippet: () => "İstanbul genelinde adrese teslim kutu catering hizmeti veren firmalar:\n1. Snacks For Party (snacksforparty.com) — Soğuk zincir ve şık servis ambalajlarıyla kapıya teslimat.\n2. Misafirliq — Özel teslimat kutuları.\n3. Macrocenter Catering — Mağazadan adrese teslimat.",
+        sourceTitle: 'Snacks For Party | Adrese Teslim Kutu Catering',
+        sourceUrl: 'https://snacksforparty.com',
+      },
+      c2: {
+        mentioned: [true, true, false],
+        cited: [true, false, false],
+        ranks: [1, 2, null],
+      },
+      c1: {
+        mentioned: [true, false, false],
+        cited: [false, false, false],
+        ranks: [2, null, null],
+      },
     },
     'prompt-13': {
-      answer: "Coffee break menü fiyatları içeriğe göre kişi başı 250 TL ile 600 TL arasında değişmektedir. Mini kruvasan, muffin, cookie ve tuzlu tartolet içeren kahve arası kutularını Snacks For Party ve Gourmet Pack'ten temin edebilirsiniz.",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Gourmet Pack', 'Backhaus Catering'],
-      query: 'coffee break menu fiyatlari istanbul',
+      c3: {
+        mentioned: [false, false, false], // 0/3 (0%) - Clear gap for action item & diagnostic
+        cited: [false, false, false],
+        ranks: [null, null, null],
+        primaryCompetitors: ['Gourmet Pack', 'Backhaus Catering', 'Misafirliq'],
+        answerSnippet: () => "Coffee break ve kahve arası menü fiyatları içeriğe göre kişi başı 250 TL ile 600 TL arasında değişmektedir.\n1. Gourmet Pack (gourmetpack.com.tr) — Kruvasan ve cookie paketleri.\n2. Backhaus Catering — Fırın kahve arası tepsileri.\n3. Misafirliq — Tatlı ve tuzlu ikram kutuları.",
+        sourceTitle: 'Gourmet Pack | Coffee Break Menü Fiyatları',
+        sourceUrl: 'https://gourmetpack.com.tr/coffee-break',
+      },
+      c2: {
+        mentioned: [false, false, false],
+        cited: [false, false, false],
+        ranks: [null, null, null],
+      },
+      c1: {
+        mentioned: [false, false, false],
+        cited: [false, false, false],
+        ranks: [null, null, null],
+      },
     },
     'prompt-14': {
-      answer: "Özel etkinlik ve toplantılar için gurme lunchbox ve artisan sandviç hazırlayan firmalar:\n1. Snacks For Party — Gurme baget, brioche ve wrap kutuları.\n2. Gourmet Pack — Bireysel lunchbox menüleri.\n3. Backhaus Catering — Taze fırın sandviç paketleri.",
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Gourmet Pack', 'Backhaus Catering'],
-      query: 'lunchbox ve sandvic siparis istanbul',
+      c3: {
+        mentioned: [true, true, false], // 2/3 (67%)
+        cited: [true, false, false],
+        ranks: [2, 1, null],
+        primaryCompetitors: ['Gourmet Pack', 'Backhaus Catering'],
+        answerSnippet: (m, r) => m
+          ? `Özel etkinlik ve toplantılar için gurme lunchbox ve sandviç hazırlayan firmalar:\n1. ${r === 1 ? 'Snacks For Party (snacksforparty.com)' : 'Gourmet Pack'}\n2. ${r === 1 ? 'Gourmet Pack' : 'Snacks For Party (snacksforparty.com)'}\n3. Backhaus Catering — Taze fırın sandviç paketleri.`
+          : "Lunchbox ve sandviç siparişi için Gourmet Pack ve Backhaus Catering kurumsal menüler sağlamaktadır.",
+        sourceTitle: 'Snacks For Party | Gurme Sandviç & Lunchbox Kutuları',
+        sourceUrl: 'https://snacksforparty.com/kategori/sandvicler',
+      },
+      c2: {
+        mentioned: [false, true, true],
+        cited: [false, false, true],
+        ranks: [null, 2, 2],
+      },
+      c1: {
+        mentioned: [false, false, true],
+        cited: [false, false, false],
+        ranks: [null, null, 3],
+      },
     },
   };
 
-  DEMO_PROMPTS.forEach((p, idx) => {
-    const data = c3Data[p.id] || {
-      answer: `İstanbul'da ${p.category} alanında Snacks For Party ve Misafirliq öne çıkan sağlayıcılardır.`,
-      clientRank: 1,
-      clientMentioned: true,
-      clientCited: true,
-      competitors: ['Misafirliq', 'Divan Catering'],
-      query: p.text,
-    };
+  const cycles = [
+    { id: 'cycle-1-baseline', date: '2026-08-01', key: 'c1' as const, model: 'gemini-3.6-flash' },
+    { id: 'cycle-2-mid', date: '2026-08-12', key: 'c2' as const, model: 'gemini-3.6-flash' },
+    { id: 'cycle-3-latest', date: '2026-08-24', key: 'c3' as const, model: 'gemini-3.7-flash' },
+  ];
 
-    // 3 runs per prompt for Cycle 3 (Gemini Grounded)
-    for (let r = 1; r <= 3; r++) {
-      const isMentioned = r <= 3 ? data.clientMentioned : false;
-      const isCited = isMentioned && data.clientCited;
-      const rank = isMentioned ? (r === 1 ? data.clientRank : data.clientRank ? data.clientRank : 1) : null;
+  DEMO_PROMPTS.forEach((p, promptIdx) => {
+    const config = promptConfigs[p.id] || promptConfigs['prompt-2'];
 
-      runs.push({
-        id: `run-c3-${p.id}-gemini-r${r}`,
-        ownerId: 'user-snacksforparty',
-        clientId: 'client-snacksforparty',
-        cycleId: 'cycle-3-latest',
-        promptId: p.id,
-        engine: 'gemini-grounded',
-        model: 'gemini-3.6-flash',
-        runIndex: r,
-        runAt: `2026-08-24T10:0${r}:${idx < 10 ? '0' + idx : idx}Z`,
-        answerText: data.answer,
-        groundingSources: [
-          { uri: `https://vertexaisearch.cloud.google.com/grounding-redirect/sfp-${p.id}`, displayTitle: 'Snacks For Party | Gurme Parti Kutuları & Menüler', resolvedDomain: 'snacksforparty.com' },
-          { uri: `https://vertexaisearch.cloud.google.com/grounding-redirect/comp-${p.id}`, displayTitle: `${data.competitors[0]} Menüleri`, resolvedDomain: data.competitors[0] === 'Misafirliq' ? 'misafirliq.com' : 'divancatering.com.tr' },
-        ],
-        webSearchQueries: [data.query],
-        brandMentioned: isMentioned,
-        brandCited: isCited,
-        position: rank,
-        prominence: isMentioned ? (rank === 1 ? 0.15 : 0.35) : null,
-        mentionedBrands: [
-          {
+    cycles.forEach((cycle) => {
+      const cycleCfg = config[cycle.key];
+
+      for (let r = 1; r <= 3; r++) {
+        const runIdx = r;
+        const isMentioned = cycleCfg.mentioned[r - 1];
+        const isCited = cycleCfg.cited[r - 1];
+        const rank = isMentioned ? cycleCfg.ranks[r - 1] : null;
+        const competitors = config.c3.primaryCompetitors;
+
+        const groundingSources: { uri: string; displayTitle: string; resolvedDomain: string }[] = [];
+
+        if (isCited) {
+          groundingSources.push({
+            uri: `https://vertexaisearch.cloud.google.com/grounding-redirect/sfp-${p.id}-r${r}`,
+            displayTitle: config.c3.sourceTitle,
+            resolvedDomain: 'snacksforparty.com',
+          });
+        }
+
+        competitors.forEach((comp, cIdx) => {
+          const compDomain = comp === 'Misafirliq'
+            ? 'misafirliq.com'
+            : comp === 'Divan Catering'
+            ? 'divancatering.com.tr'
+            : comp === 'Gourmet Pack'
+            ? 'gourmetpack.com.tr'
+            : comp === 'Backhaus Catering'
+            ? 'backhaus.com.tr'
+            : 'macrocenter.com.tr';
+
+          groundingSources.push({
+            uri: `https://vertexaisearch.cloud.google.com/grounding-redirect/comp-${cIdx}-${p.id}`,
+            displayTitle: `${comp} Menüleri ve Fiyatları`,
+            resolvedDomain: compDomain,
+          });
+        });
+
+        const mentionedBrands: { name: string; isClient: boolean; isKnownCompetitor: boolean; sentiment: 'Positive' | 'Neutral' | 'Negative'; verbatimQuote: string }[] = [];
+
+        if (isMentioned) {
+          mentionedBrands.push({
             name: 'Snacks For Party',
             isClient: true,
             isKnownCompetitor: false,
             sentiment: 'Positive',
-            verbatimQuote: 'Vanille Catering güvencesiyle hazırlanan, kutudan çıkar çıkmaz doğrudan servise hazır kanepe, mini burger, wrap ve tatlı parti kutuları',
-          },
-          ...data.competitors.map((c) => ({
+            verbatimQuote: rank === 1
+              ? 'Snacks For Party (snacksforparty.com) — Vanille Catering güvencesiyle adrese teslim pratik parti kutuları'
+              : 'Snacks For Party kutulu ikram servisleri',
+          });
+        }
+
+        competitors.forEach((c) => {
+          mentionedBrands.push({
             name: c,
             isClient: false,
             isKnownCompetitor: true,
-            sentiment: 'Positive' as const,
-            verbatimQuote: `${c} menüleri`,
-          })),
-        ],
-        orderedList: true,
-        rankedNames: isMentioned && rank === 1 ? ['Snacks For Party', ...data.competitors] : [...data.competitors, 'Snacks For Party'],
-        recommendedEntityType: 'Catering & Food Delivery Service',
-        answerFormat: 'list',
-        error: null,
-      });
-    }
-
-    // 2 runs per prompt for Cycle 3 (Perplexity Sonar)
-    for (let r = 1; r <= 2; r++) {
-      // Perplexity sonar has slight variation in citation rate depending on prompt index
-      const ppxCited = (idx % 3 !== 0) && data.clientCited;
-      const ppxMentioned = data.clientMentioned;
-
-      runs.push({
-        id: `run-c3-${p.id}-ppx-r${r}`,
-        ownerId: 'user-snacksforparty',
-        clientId: 'client-snacksforparty',
-        cycleId: 'cycle-3-latest',
-        promptId: p.id,
-        engine: 'perplexity-sonar',
-        model: 'sonar-pro',
-        runIndex: r,
-        runAt: `2026-08-24T10:1${r}:${idx < 10 ? '0' + idx : idx}Z`,
-        answerText: `[Perplexity Sonar Answer] ${data.answer}`,
-        groundingSources: [
-          ...(ppxCited ? [{ uri: `https://www.perplexity.ai/search/sfp-${p.id}`, displayTitle: 'Snacks For Party Online Order', resolvedDomain: 'snacksforparty.com' }] : []),
-          { uri: `https://www.perplexity.ai/search/comp-${p.id}`, displayTitle: `${data.competitors[0]} Official Site`, resolvedDomain: data.competitors[0] === 'Misafirliq' ? 'misafirliq.com' : 'divancatering.com.tr' },
-        ],
-        webSearchQueries: [data.query],
-        brandMentioned: ppxMentioned,
-        brandCited: ppxCited,
-        position: ppxMentioned ? (ppxCited ? 1 : 2) : null,
-        prominence: ppxMentioned ? 0.25 : null,
-        mentionedBrands: [
-          {
-            name: 'Snacks For Party',
-            isClient: true,
-            isKnownCompetitor: false,
             sentiment: 'Positive',
-            verbatimQuote: 'Snacks For Party catering kutuları',
-          },
-          ...data.competitors.map((c) => ({
-            name: c,
-            isClient: false,
-            isKnownCompetitor: true,
-            sentiment: 'Positive' as const,
-            verbatimQuote: `${c} menüleri`,
-          })),
-        ],
-        orderedList: true,
-        rankedNames: ppxCited ? ['Snacks For Party', ...data.competitors] : [...data.competitors, 'Snacks For Party'],
-        recommendedEntityType: 'Catering Service',
-        answerFormat: 'list',
-        error: null,
-      });
-    }
+            verbatimQuote: `${c} menüleri ve ikram paketleri`,
+          });
+        });
 
-    // Baseline runs (Cycle 1)
-    for (let r = 1; r <= 3; r++) {
-      const baseMentioned = r === 1; // 33% baseline
-      runs.push({
-        id: `run-c1-${p.id}-r${r}`,
-        ownerId: 'user-snacksforparty',
-        clientId: 'client-snacksforparty',
-        cycleId: 'cycle-1-baseline',
-        promptId: p.id,
-        engine: 'gemini-grounded',
-        model: 'gemini-3.6-flash',
-        runIndex: r,
-        runAt: `2026-08-01T10:0${r}:${idx < 10 ? '0' + idx : idx}Z`,
-        answerText: baseMentioned
-          ? `İstanbul'da ${p.category} konusunda Misafirliq ve Snacks For Party seçenekler arasındadır.`
-          : `İstanbul'da ${p.category} konusunda Misafirliq ve Divan Catering tercih edilmektedir.`,
-        groundingSources: [
-          { uri: 'https://vertexaisearch.cloud.google.com/grounding-redirect/base-1', displayTitle: 'Misafirliq Catering', resolvedDomain: 'misafirliq.com' },
-          ...(baseMentioned ? [{ uri: 'https://vertexaisearch.cloud.google.com/grounding-redirect/base-2', displayTitle: 'Snacks For Party', resolvedDomain: 'snacksforparty.com' }] : []),
-        ],
-        webSearchQueries: [p.text],
-        brandMentioned: baseMentioned,
-        brandCited: baseMentioned,
-        position: baseMentioned ? 2 : null,
-        prominence: baseMentioned ? 0.45 : null,
-        mentionedBrands: [
-          { name: 'Misafirliq', isClient: false, isKnownCompetitor: true, sentiment: 'Positive', verbatimQuote: 'Misafirliq' },
-          ...(baseMentioned ? [{ name: 'Snacks For Party', isClient: true, isKnownCompetitor: false, sentiment: 'Positive' as const, verbatimQuote: 'Snacks For Party' }] : []),
-        ],
-        orderedList: false,
-        rankedNames: [],
-        recommendedEntityType: 'Catering Service',
-        answerFormat: 'prose',
-        error: null,
-      });
-    }
+        const answerText = config.c3.answerSnippet(isMentioned, rank);
+        const hasRankList = answerText.includes('1.') && answerText.includes('2.');
+
+        runs.push({
+          id: `run-${cycle.id}-${p.id}-r${r}`,
+          ownerId: 'user-snacksforparty',
+          clientId: 'client-snacksforparty',
+          cycleId: cycle.id,
+          promptId: p.id,
+          engine: 'gemini-grounded',
+          model: cycle.model,
+          runIndex: runIdx,
+          runAt: `${cycle.date}T10:0${r}:${promptIdx < 10 ? '0' + promptIdx : promptIdx}Z`,
+          answerText,
+          groundingSources,
+          webSearchQueries: [p.text],
+          brandMentioned: isMentioned,
+          brandCited: isCited,
+          position: hasRankList && rank ? rank : null,
+          prominence: isMentioned ? (rank === 1 ? 0.15 : 0.35) : null,
+          mentionedBrands,
+          orderedList: hasRankList,
+          rankedNames: hasRankList
+            ? (rank === 1 ? ['Snacks For Party', ...competitors] : [...competitors, 'Snacks For Party'])
+            : [],
+          recommendedEntityType: 'Catering Service & Online Food Delivery',
+          answerFormat: hasRankList ? 'list' : 'prose',
+          error: null,
+        });
+      }
+    });
   });
 
   return runs;
@@ -523,10 +1127,10 @@ export const DEMO_RUNS: Run[] = generateRunsForPrompts();
 
 export const DEMO_DIAGNOSTICS: Diagnostic[] = [
   {
-    id: 'diag-prompt-1',
+    id: 'diag-prompt-15',
     ownerId: 'user-snacksforparty',
     clientId: 'client-snacksforparty',
-    promptId: 'prompt-1',
+    promptId: 'prompt-15',
     cycleId: 'cycle-3-latest',
     dimensions: {
       'Intent Match': {
@@ -559,7 +1163,7 @@ export const DEMO_DIAGNOSTICS: Diagnostic[] = [
     likelyGap: 'Özel diyet (glutensiz, vegan) filtreleri ve teslimat saat aralıklarının schema.org işaretlemesi ile güçlendirilmesi.',
     confidence: 'High',
     recommendedActionSummary: 'Kategori sayfalarına JSON-LD FoodEstablishment ve Menu schema işaretlemesi ekleyerek porsiyon ve diyet filtrelerini liste formatında yayınlayın.',
-    validationMethod: '3 çalıştırma ile "Evde doğum günü yapacağım. Catering/atıştırmalık nereden alabilirim?" sorgusunu yeniden test edin.',
+    validationMethod: '3 çalıştırma ile "Evde doğum günü yapacağım. Catering nereden alabilirim?" sorgusunu yeniden test edin.',
     createdAt: '2026-08-24T10:10:00Z',
   },
   {
@@ -608,8 +1212,8 @@ export const DEMO_ACTIONS: ActionItem[] = [
     id: 'action-1',
     ownerId: 'user-snacksforparty',
     clientId: 'client-snacksforparty',
-    diagnosticId: 'diag-prompt-1',
-    promptIds: ['prompt-1', 'prompt-2', 'prompt-6', 'prompt-7'],
+    diagnosticId: 'diag-prompt-15',
+    promptIds: ['prompt-15', 'prompt-16', 'prompt-2', 'prompt-6', 'prompt-7'],
     title: 'Parti Kutuları Sayfasına JSON-LD Menu İşaretlemesi ve Porsiyon Tablosu Ekleme',
     why: 'İlk döngüde %33 olan anılma oranı, ürün sayfalarındaki porsiyon adetleri ve içerik netleştirildikten sonra %100\'e yükseldi. Modeller doğrudan menü içeriklerini kaynak göstermektedir.',
     evidence: {
@@ -621,7 +1225,7 @@ export const DEMO_ACTIONS: ActionItem[] = [
     priority: 'Critical',
     impact: 'High',
     effort: 'Low',
-    validation: 'Retest prompt "Evde doğum günü yapacağım. Catering/atıştırmalık nereden alabilirim?" (N=3).',
+    validation: 'Retest prompt "Evde doğum günü yapacağım. Catering nereden alabilirim?" (N=3).',
     status: 'Retested',
     createdAt: '2026-08-02T10:00:00Z',
     implementedAt: '2026-08-15T16:00:00Z',
@@ -727,3 +1331,78 @@ export const demoPageAnalyses = DEMO_PAGE_ANALYSES;
 export const demoCycleAggregates: CycleAggregate[] = DEMO_RUN_CYCLES.map((cycle) =>
   computeCycleAggregate(cycle.id, DEMO_RUNS, DEMO_CLIENT)
 );
+
+export const DEMO_BRAND_MEMORIES: BrandMemoryItem[] = [
+  {
+    id: 'mem-sfp-1',
+    clientId: 'client-snacksforparty',
+    title: 'Şirket Tanımı & Marka Konumlandırması',
+    entityType: 'company_overview',
+    sourceUrl: 'https://snacksforparty.com/about',
+    sourceType: 'crawler',
+    content: 'Snacks For Party, Vanille Catering güvencesiyle İstanbul genelinde ev davetleri, kokteyl organizasyonları, ofis etkinlikleri ve özel kutlamalar için hazır servis gurme atıştırmalık kutuları üreten butik catering markasıdır.',
+    keyFacts: [
+      'Vanille Catering iştirakidir ve kurumsal hijyen standartlarına sahiptir.',
+      'İstanbul içi aynı gün/belirlenen saatte soğuk zincir teslimat yapar.',
+      'Garson veya mutfak ekipmanı gerektirmeyen hazır servis sunum kutuları sunar.'
+    ],
+    confidence: 'High',
+    tags: ['overview', 'catering', 'istanbul', 'boutique'],
+    createdAt: '2026-08-25T12:00:00Z',
+    updatedAt: '2026-08-25T12:00:00Z',
+  },
+  {
+    id: 'mem-sfp-2',
+    clientId: 'client-snacksforparty',
+    title: 'Kokteyl & Parti İkram Menü Paketleri',
+    entityType: 'product_feature',
+    sourceUrl: 'https://snacksforparty.com/menuler',
+    sourceType: 'crawler',
+    content: 'Tuzlu kanapeler, mini burgerler, mini wrap çeşitleri, brioche sandviçler, peynir/şarküteri tabakları ve el yapımı mini tatlı kutularından oluşan zengin menü yelpazesi. 10, 20 ve 30+ kişilik hazır setler mevcuttur.',
+    keyFacts: [
+      'Kişi başı 8-12 parça doyurucu atıştırmalık standardı uygulanır.',
+      'Vejetaryen, vegan ve glütensiz menü alternatifleri mevcuttur.',
+      'Tüm ürünler taze hazırlanıp şık kraft/akrilik sunum kutularında sevk edilir.'
+    ],
+    confidence: 'High',
+    tags: ['products', 'cocktail', 'fingerfood', 'menu'],
+    createdAt: '2026-08-25T12:00:00Z',
+    updatedAt: '2026-08-25T12:00:00Z',
+  },
+  {
+    id: 'mem-sfp-3',
+    clientId: 'client-snacksforparty',
+    title: 'Fiyatlandırma Politikası & Şeffaf Paket Fiyatları',
+    entityType: 'pricing_plan',
+    sourceUrl: 'https://snacksforparty.com/fiyatlar',
+    sourceType: 'manual',
+    content: 'Snacks For Party şeffaf kutu bazlı e-ticaret fiyatlandırması sunar. 10 Kişilik Başlangıç Kokteyl Kutusu 3.850 TL, 20 Kişilik Premium Parti Kutusu 7.200 TL, 30 Kişilik Deluxe Davet Seti 10.500 TL civarındadır.',
+    keyFacts: [
+      'Gizli servis veya garson bedeli yoktur; kutu fiyatı nettir.',
+      'Belirli sipariş tutarı üzeri İstanbul içi teslimat ücretsizdir.',
+      'Web sitesi üzerinden anında kredi kartıyla online sipariş verilebilir.'
+    ],
+    confidence: 'High',
+    tags: ['pricing', 'plans', 'transparent'],
+    createdAt: '2026-08-25T12:00:00Z',
+    updatedAt: '2026-08-25T12:00:00Z',
+  },
+  {
+    id: 'mem-sfp-4',
+    clientId: 'client-snacksforparty',
+    title: 'Rakiplere Karşı Ayrışma Noktaları (USPs)',
+    entityType: 'competitor_diff',
+    sourceUrl: 'https://snacksforparty.com/neden-biz',
+    sourceType: 'manual',
+    content: 'Geleneksel ağır catering firmalarının aksine (Misafirliq, Hub vb.), mutfaksız ve minimum 24 saat önceden siparişle evlere ve ofislere hazır gurme kutu teslimatı yapar. Masrafsız ve pratik sunum sağlar.',
+    keyFacts: [
+      'Geleneksel cateringlere göre %40 daha uygun maliyet ve sıfır servis karmaşası.',
+      'Instagram ve sosyal davet estetiğine uygun lüks sunum tasarımı.',
+      'Siparişin dakik saat aralığında kapıya teslim garantisi.'
+    ],
+    confidence: 'High',
+    tags: ['usp', 'differentiation', 'competitor_gap'],
+    createdAt: '2026-08-25T12:00:00Z',
+    updatedAt: '2026-08-25T12:00:00Z',
+  },
+];

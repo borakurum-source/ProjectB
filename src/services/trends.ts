@@ -78,18 +78,20 @@ export class TrendAnalyzer {
     const trackedBrands = [client.brandName, ...client.competitorBrands.slice(0, 4)];
 
     const dataPoints: TrendDataPoint[] = windowedCycles.map((cycle) => {
-      const clientSov = cycle.shareOfVoice[client.brandName]?.share ?? 0;
+      const clientSov = cycle.shareOfVoice?.[client.brandName]?.share ?? 0;
       const competitorSovs: Record<string, number> = {};
 
-      for (const comp of client.competitorBrands.slice(0, 4)) {
-        competitorSovs[comp] = cycle.shareOfVoice[comp]?.share ?? 0;
+      for (const comp of (client.competitorBrands || []).slice(0, 4)) {
+        competitorSovs[comp] = cycle.shareOfVoice?.[comp]?.share ?? 0;
       }
 
       const dateObj = new Date(cycle.startedAt);
-      const formattedDate = dateObj.toLocaleDateString(undefined, {
-        month: 'short',
-        day: 'numeric',
-      });
+      const timeStr = !isNaN(dateObj.getTime())
+        ? dateObj.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+        : '';
+      const formattedDate = !isNaN(dateObj.getTime())
+        ? `${dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}${timeStr ? `, ${timeStr}` : ''}`
+        : cycle.cycleId;
 
       return {
         cycleId: cycle.cycleId,
@@ -181,8 +183,8 @@ export class TrendAnalyzer {
   ): number {
     if (!cycles || cycles.length < 2) return 0;
 
-    const clientValues = cycles.map((c) => c.shareOfVoice[clientBrand]?.share ?? 0);
-    const compValues = cycles.map((c) => c.shareOfVoice[competitorBrand]?.share ?? 0);
+    const clientValues = cycles.map((c) => c.shareOfVoice?.[clientBrand]?.share ?? 0);
+    const compValues = cycles.map((c) => c.shareOfVoice?.[competitorBrand]?.share ?? 0);
 
     const n = clientValues.length;
     const meanClient = clientValues.reduce((a, b) => a + b, 0) / n;

@@ -30,19 +30,7 @@ export function RunCycleModal({
     activePrompts.map((p) => p.id)
   );
   const [runsPerPrompt, setRunsPerPrompt] = useState<number>(defaultRunsPerPrompt || 3);
-  const [engine, setEngine] = useState<EngineId>(activeEngine || 'gemini-grounded');
-  const [isPerplexityConfigured, setIsPerplexityConfigured] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/health')
-      .then((res) => res.json())
-      .then((data) => {
-        if (data?.perplexityApiKeyConfigured) {
-          setIsPerplexityConfigured(true);
-        }
-      })
-      .catch(() => {});
-  }, []);
+  const [engine] = useState<EngineId>('gemini-grounded');
 
   // Exact arithmetic calculation
   const promptCount = selectedPromptIds.length;
@@ -67,30 +55,30 @@ export function RunCycleModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-[#111827]/70 backdrop-blur-xs flex items-center justify-center p-4">
-      <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden shadow-2xl">
+    <div className="fixed inset-0 z-50 bg-[#111827]/70 backdrop-blur-xs flex items-center justify-center p-2.5 sm:p-4">
+      <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl rounded-sm">
         {/* Header */}
-        <div className="px-6 py-4 border-b border-[#E5E7EB] dark:border-[#1E293B] bg-[#F9FAFB] dark:bg-[#1E293B] flex items-start justify-between">
+        <div className="px-4 sm:px-6 py-3 sm:py-4 border-b border-[#E5E7EB] dark:border-[#1E293B] bg-[#F9FAFB] dark:bg-[#1E293B] flex items-start justify-between">
           <div>
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 mb-1">
               <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-[#111827] dark:bg-[#4338CA] text-white">
-                Measurement Cycle Configuration
+                Measurement Cycle
               </span>
-              <span className="text-xs text-[#6B7280] dark:text-[#94A3B8] font-mono">Atomic Unit of Measurement</span>
+              <span className="text-[11px] sm:text-xs text-[#6B7280] dark:text-[#94A3B8] font-mono">Atomic Unit of Measurement</span>
             </div>
             <h2 className="text-sm font-bold text-[#111827] dark:text-[#F8FAFC]">Execute New Grounded Run Cycle</h2>
           </div>
           <button
             onClick={onClose}
             title={isExecuting ? 'Hide — the run keeps going in the background' : undefined}
-            className="text-[#9CA3AF] hover:text-[#111827] dark:hover:text-[#F8FAFC] p-1.5 transition-colors"
+            className="text-[#9CA3AF] hover:text-[#111827] dark:hover:text-[#F8FAFC] p-1.5 transition-colors min-h-[36px] min-w-[36px] flex items-center justify-center"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-5">
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 sm:space-y-5">
           {isExecuting ? (
             <div className="py-12 text-center space-y-4">
               {runProgress && runProgress.total > 0 ? (
@@ -144,7 +132,7 @@ export function RunCycleModal({
                   </div>
                 </div>
                 <div className="border-t border-white/20 pt-2 text-[10px] text-slate-400 flex items-center justify-between">
-                  <span>{engine === 'perplexity-sonar' ? 'Call 1: Perplexity Agent Grounded' : 'Call 1: Gemini Grounded with Google Search'}</span>
+                  <span>Call 1: Gemini Grounded with Google Search</span>
                   <span>Call 2: Gemini JSON Extraction</span>
                 </div>
               </div>
@@ -183,38 +171,15 @@ export function RunCycleModal({
                     Visibility Engine
                   </label>
                   <p className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] mb-2">
-                    Engines are measured independently, never averaged.
+                    Google Search Grounded execution with Gemini 2.5 Flash.
                   </p>
                   <div className="space-y-1.5">
                     <button
                       type="button"
-                      onClick={() => setEngine('gemini-grounded')}
-                      className={`w-full py-1.5 px-2.5 rounded text-xs flex items-center justify-between transition-colors border ${
-                        engine === 'gemini-grounded'
-                          ? 'bg-[#111827] dark:bg-[#4338CA] text-white border-[#111827] dark:border-[#4338CA] font-bold uppercase tracking-wider'
-                          : 'bg-white dark:bg-[#0F172A] border-[#D1D5DB] dark:border-[#334155] text-[#374151] dark:text-[#CBD5E1]'
-                      }`}
+                      className="w-full py-1.5 px-2.5 rounded text-xs flex items-center justify-between transition-colors border bg-[#111827] dark:bg-[#4338CA] text-white border-[#111827] dark:border-[#4338CA] font-bold uppercase tracking-wider"
                     >
                       <span>Gemini Grounded</span>
                       <span className="text-[10px] opacity-80">Active</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEngine('perplexity-sonar')}
-                      disabled={!isPerplexityConfigured}
-                      className={`w-full py-1.5 px-2.5 rounded text-xs flex items-center justify-between transition-colors border ${
-                        engine === 'perplexity-sonar'
-                          ? 'bg-[#111827] dark:bg-[#4338CA] text-white border-[#111827] dark:border-[#4338CA] font-bold uppercase tracking-wider'
-                          : isPerplexityConfigured
-                          ? 'bg-white dark:bg-[#0F172A] border-[#D1D5DB] dark:border-[#334155] text-[#374151] dark:text-[#CBD5E1] hover:bg-[#F9FAFB]'
-                          : 'bg-[#F3F4F6] dark:bg-[#1E293B] text-[#9CA3AF] dark:text-[#64748B] border-[#E5E7EB] dark:border-[#334155] cursor-not-allowed uppercase tracking-wider'
-                      }`}
-                      title={isPerplexityConfigured ? 'Select Perplexity Agent Engine' : 'Configure Perplexity API key in Settings to enable'}
-                    >
-                      <span>Perplexity Agent</span>
-                      <span className="text-[10px] opacity-80">
-                        {isPerplexityConfigured ? (engine === 'perplexity-sonar' ? 'Active' : 'Ready') : 'Key Required in Settings'}
-                      </span>
                     </button>
                   </div>
                 </div>
@@ -266,10 +231,10 @@ export function RunCycleModal({
 
         {/* Footer */}
         {!isExecuting && (
-          <div className="px-6 py-3 border-t border-[#E5E7EB] dark:border-[#1E293B] bg-[#F9FAFB] dark:bg-[#1E293B] flex items-center justify-between">
+          <div className="px-4 sm:px-6 py-3 border-t border-[#E5E7EB] dark:border-[#1E293B] bg-[#F9FAFB] dark:bg-[#1E293B] flex items-center justify-between gap-2">
             <button
               onClick={onClose}
-              className="px-3.5 py-1.5 border border-[#D1D5DB] dark:border-[#334155] hover:bg-[#F3F4F6] dark:hover:bg-[#0F172A] rounded text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] transition-colors"
+              className="px-3 sm:px-3.5 py-2 sm:py-1.5 border border-[#D1D5DB] dark:border-[#334155] hover:bg-[#F3F4F6] dark:hover:bg-[#0F172A] rounded text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] transition-colors"
             >
               Cancel
             </button>
@@ -283,10 +248,10 @@ export function RunCycleModal({
                 });
               }}
               disabled={selectedPromptIds.length === 0}
-              className="px-5 py-1.5 bg-[#111827] dark:bg-[#4338CA] hover:bg-black dark:hover:bg-[#3730A3] disabled:bg-[#D1D5DB] dark:disabled:bg-[#334155] text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs transition-colors inline-flex items-center gap-2"
+              className="px-4 sm:px-5 py-2 sm:py-1.5 bg-[#111827] dark:bg-[#4338CA] hover:bg-black dark:hover:bg-[#3730A3] disabled:bg-[#D1D5DB] dark:disabled:bg-[#334155] text-white rounded text-[11px] sm:text-xs font-bold uppercase tracking-wider shadow-xs transition-colors inline-flex items-center gap-1.5 sm:gap-2"
             >
-              <Play className="w-3.5 h-3.5 fill-current" />
-              Execute Run Cycle ({totalApiCalls} Calls)
+              <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+              <span className="truncate">Execute ({totalApiCalls} Calls)</span>
             </button>
           </div>
         )}

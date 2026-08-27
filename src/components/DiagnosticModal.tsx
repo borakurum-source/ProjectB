@@ -1,14 +1,16 @@
 import { useState } from 'react';
-import { Prompt, Diagnostic, ActionItem, Client, DiagnosisDimension, DiagnosisStatus } from '../types';
-import { X, Sparkles, ShieldAlert, Check } from 'lucide-react';
+import { Prompt, Diagnostic, ActionItem, Client, DiagnosisDimension, DiagnosisStatus, Run } from '../types';
+import { X, Sparkles, ShieldAlert, Check, Play } from 'lucide-react';
 
 interface DiagnosticModalProps {
   prompt: Prompt;
   diagnostic: Diagnostic | null;
   client: Client;
+  runs?: Run[];
   isLoading: boolean;
   onGenerate: () => void;
   onSaveAction?: (action: ActionItem) => void;
+  onOpenRunModal?: () => void;
   onClose: () => void;
 }
 
@@ -33,12 +35,17 @@ export function DiagnosticModal({
   prompt,
   diagnostic,
   client,
+  runs = [],
   isLoading,
   onGenerate,
   onSaveAction,
+  onOpenRunModal,
   onClose,
 }: DiagnosticModalProps) {
   const [actionAdded, setActionAdded] = useState(false);
+
+  const promptRuns = runs.filter((r) => r.promptId === prompt.id);
+  const hasSufficientData = promptRuns.length > 0;
 
   return (
     <div className="fixed inset-0 z-50 bg-[#111827]/70 dark:bg-black/80 backdrop-blur-xs flex items-center justify-center p-4">
@@ -75,11 +82,40 @@ export function DiagnosticModal({
                 Synthesizing observed groundings, cited sources, entity clarity, and extracting implementable actions.
               </div>
             </div>
+          ) : !hasSufficientData && !diagnostic ? (
+            /* Insufficient Measurement Variance Warning Box */
+            <div className="py-10 px-6 text-center space-y-4 max-w-xl mx-auto bg-[#FFFBEB] dark:bg-[#78350F]/20 border border-[#FDE68A] dark:border-[#B45309]">
+              <ShieldAlert className="w-12 h-12 text-[#D97706] dark:text-[#FBBF24] mx-auto" />
+              <div className="space-y-1">
+                <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-[#D97706] text-white">
+                  Insufficient Measurement Variance (0 Runs)
+                </span>
+                <h3 className="text-sm font-bold text-[#111827] dark:text-[#F8FAFC]">
+                  No Grounded Measurement Data Available
+                </h3>
+              </div>
+              <p className="text-xs text-[#4B5563] dark:text-[#CBD5E1] leading-relaxed">
+                Methodological GEO diagnostics require factual evidence synthesized from real grounded answer runs. Generating insights without measurement runs causes hallucinated gaps. Run at least one cycle to unlock diagnostics.
+              </p>
+              {onOpenRunModal && (
+                <div className="pt-2 flex justify-center">
+                  <button
+                    onClick={onOpenRunModal}
+                    className="px-4 py-2 bg-[#111827] dark:bg-[#6366F1] hover:bg-black dark:hover:bg-[#4F46E5] text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs transition-colors inline-flex items-center gap-2"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" /> Execute Run Cycle to Collect Data
+                  </button>
+                </div>
+              )}
+            </div>
           ) : !diagnostic ? (
             <div className="py-12 text-center space-y-4">
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-mono font-medium bg-[#ECFDF5] dark:bg-[#064E3B]/50 text-[#065F46] dark:text-[#A7F3D0] border border-[#A7F3D0] dark:border-[#065F46]">
+                Measurement Data Verified: {promptRuns.length} Grounded Run(s)
+              </div>
               <ShieldAlert className="w-12 h-12 text-[#9CA3AF] dark:text-[#64748B] mx-auto" />
               <div className="text-xs font-bold uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC]">
-                No diagnostic generated for this prompt yet.
+                Ready for 6-Dimension GEO Diagnostic
               </div>
               <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] max-w-md mx-auto">
                 Generate an evidence-backed evaluation across Intent Match, Entity Clarity, Answer Extractability, Content Coverage, Evidence/Authority, and Structured Information.

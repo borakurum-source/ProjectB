@@ -1,7 +1,7 @@
 import { useState, FormEvent } from 'react';
 import { ActionItem, Client, ActionStatus, Prompt } from '../../types';
 import { BeforeAfterDiffChart } from '../charts/BeforeAfterDiffChart';
-import { Plus, Play, XCircle } from 'lucide-react';
+import { Plus, Play, XCircle, RotateCw, CheckCircle2, ShieldCheck, ArrowRight, Zap } from 'lucide-react';
 
 interface ActionsTabProps {
   actions: ActionItem[];
@@ -24,6 +24,8 @@ export function ActionsTab({
 }: ActionsTabProps) {
   const [selectedStatus, setSelectedStatus] = useState<string>('ALL');
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [showPlaybookModal, setShowPlaybookModal] = useState(false);
+  const [selectedPlatform, setSelectedPlatform] = useState<'Ticimax' | 'Shopify' | 'WooCommerce' | 'Custom'>('Ticimax');
 
   // New action form state
   const [newTitle, setNewTitle] = useState('');
@@ -68,7 +70,7 @@ export function ActionsTab({
   return (
     <div className="space-y-6">
       {/* Top Banner & Filter Controls */}
-      <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs">
+      <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827] dark:text-[#F8FAFC]">
@@ -78,11 +80,11 @@ export function ActionsTab({
               Strict loop: Diagnose gap → Implement concrete changes → Retest identical prompts → Verify Before/After diff.
             </p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <select
               value={selectedStatus}
               onChange={(e) => setSelectedStatus(e.target.value)}
-              className="px-3 py-1.5 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs font-semibold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1]"
+              className="flex-1 sm:flex-none px-3 py-2 sm:py-1.5 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs font-semibold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1]"
             >
               <option value="ALL">All Statuses ({actions.length})</option>
               <option value="Todo">Todo ({actions.filter((a) => a.status === 'Todo').length})</option>
@@ -92,11 +94,44 @@ export function ActionsTab({
             </select>
 
             <button
+              onClick={() => setShowPlaybookModal(true)}
+              className="px-3.5 py-2 sm:py-1.5 bg-[#EEF2FF] dark:bg-[#312E81] text-[#4338CA] dark:text-[#E0E7FF] border border-[#C7D2FE] dark:border-[#4338CA] hover:bg-[#E0E7FF] dark:hover:bg-[#3730A3] rounded text-xs font-bold uppercase tracking-wider shadow-xs transition-colors inline-flex items-center justify-center gap-1.5 shrink-0"
+            >
+              <Zap className="w-3.5 h-3.5" /> Platform Playbook
+            </button>
+
+            <button
               onClick={() => setShowCreateModal(true)}
-              className="px-3.5 py-1.5 bg-[#111827] dark:bg-[#4338CA] hover:bg-black dark:hover:bg-[#3730A3] text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs transition-colors inline-flex items-center gap-1.5"
+              className="px-3.5 py-2 sm:py-1.5 bg-[#111827] dark:bg-[#4338CA] hover:bg-black dark:hover:bg-[#3730A3] text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs transition-colors inline-flex items-center justify-center gap-1.5 shrink-0"
             >
               <Plus className="w-3.5 h-3.5" /> New Action
             </button>
+          </div>
+        </div>
+
+        {/* Retest Pipeline Status Bar */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-[#F3F4F6] dark:border-[#1E293B] text-xs">
+          <div className="p-2.5 bg-[#F9FAFB] dark:bg-[#1E293B] rounded-xs border border-[#E5E7EB] dark:border-[#334155]">
+            <div className="text-[10px] uppercase font-bold text-[#6B7280] dark:text-[#94A3B8]">Total Actions</div>
+            <div className="text-lg font-bold font-mono text-[#111827] dark:text-[#F8FAFC]">{actions.length}</div>
+          </div>
+          <div className="p-2.5 bg-[#FEF3C7]/40 dark:bg-[#78350F]/20 rounded-xs border border-[#FDE68A] dark:border-[#B45309]">
+            <div className="text-[10px] uppercase font-bold text-[#92400E] dark:text-[#FDE68A]">In Progress</div>
+            <div className="text-lg font-bold font-mono text-[#92400E] dark:text-[#FDE68A]">
+              {actions.filter((a) => a.status === 'In Progress').length}
+            </div>
+          </div>
+          <div className="p-2.5 bg-[#EEF2FF] dark:bg-[#1E1B4B]/40 rounded-xs border border-[#C7D2FE] dark:border-[#3730A3]">
+            <div className="text-[10px] uppercase font-bold text-[#4338CA] dark:text-[#A5B4FC]">Ready for Retest</div>
+            <div className="text-lg font-bold font-mono text-[#4338CA] dark:text-[#A5B4FC]">
+              {actions.filter((a) => a.status === 'Implemented').length}
+            </div>
+          </div>
+          <div className="p-2.5 bg-[#ECFDF5] dark:bg-[#064E3B]/30 rounded-xs border border-[#A7F3D0] dark:border-[#065F46]">
+            <div className="text-[10px] uppercase font-bold text-[#065F46] dark:text-[#A7F3D0]">Verified / Retested</div>
+            <div className="text-lg font-bold font-mono text-[#065F46] dark:text-[#A7F3D0]">
+              {actions.filter((a) => a.status === 'Retested').length}
+            </div>
           </div>
         </div>
       </div>
@@ -342,6 +377,168 @@ export function ActionsTab({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Platform AEO Foundation Playbook Modal */}
+      {showPlaybookModal && (
+        <div className="fixed inset-0 z-50 bg-[#111827]/80 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] w-full max-w-xl overflow-hidden shadow-2xl rounded-lg">
+            <div className="px-6 py-4 border-b border-[#E5E7EB] dark:border-[#1E293B] bg-[#F9FAFB] dark:bg-[#1E293B] flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Zap className="w-4 h-4 text-[#4338CA] dark:text-[#A5B4FC]" />
+                <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827] dark:text-[#F8FAFC]">
+                  AEO / GEO Platform Foundation Playbook
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowPlaybookModal(false)}
+                className="text-[#9CA3AF] hover:text-[#111827] dark:hover:text-[#F8FAFC]"
+              >
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-5">
+              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8]">
+                Select your e-commerce or website platform infrastructure to automatically import tailored, 4-stage foundational AEO/GEO action items into your actionable queue.
+              </p>
+
+              {/* Platform Selector */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {(['Ticimax', 'Shopify', 'WooCommerce', 'Custom'] as const).map((plat) => (
+                  <button
+                    key={plat}
+                    type="button"
+                    onClick={() => setSelectedPlatform(plat)}
+                    className={`p-3 border text-xs font-bold uppercase tracking-wider rounded text-center transition-all ${
+                      selectedPlatform === plat
+                        ? 'bg-[#111827] dark:bg-[#4338CA] text-white border-[#111827] dark:border-[#4338CA] shadow-xs'
+                        : 'bg-[#F9FAFB] dark:bg-[#1E293B] text-[#374151] dark:text-[#CBD5E1] border-[#E5E7EB] dark:border-[#334155] hover:bg-[#F3F4F6] dark:hover:bg-[#334155]'
+                    }`}
+                  >
+                    {plat}
+                  </button>
+                ))}
+              </div>
+
+              {/* Playbook Items Preview */}
+              <div className="p-4 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded text-xs space-y-3">
+                <div className="font-bold text-[#111827] dark:text-[#F8FAFC] flex items-center justify-between">
+                  <span>{selectedPlatform} First-Wave Optimization Actions (4 Items):</span>
+                  <span className="text-[10px] font-mono text-[#4338CA] dark:text-[#A5B4FC] bg-[#EEF2FF] dark:bg-[#312E81] px-2 py-0.5 rounded">
+                    Ready to Import
+                  </span>
+                </div>
+
+                <ul className="space-y-2 text-[11px] text-[#374151] dark:text-[#CBD5E1] list-disc pl-4">
+                  {selectedPlatform === 'Ticimax' && (
+                    <>
+                      <li><strong>[Bot Check & Robots.txt]</strong> Add explicit Allow rules for Google-Extended & GPTBot + append Sitemap URL in Ticimax SEO panel.</li>
+                      <li><strong>[Schema & Entity Clarity]</strong> Inject LocalBusiness / FoodEstablishment JSON-LD via Ticimax Head Scripts.</li>
+                      <li><strong>[Answer Extractability]</strong> Add SSS / FAQ HTML blocks to key category pages (Evde Catering, Party Snacks).</li>
+                      <li><strong>[Entity Positioning]</strong> Optimize product titles & category descriptions with brand context.</li>
+                    </>
+                  )}
+                  {selectedPlatform === 'Shopify' && (
+                    <>
+                      <li><strong>[Bot Check & Robots.txt]</strong> Update liquid theme or Robots.txt.liquid to allow Google-Extended / GPTBot crawling.</li>
+                      <li><strong>[Schema & Entity]</strong> Add Organization & LocalBusiness JSON-LD snippet via Liquid theme code.</li>
+                      <li><strong>[Extractability]</strong> Add Metafields for FAQ schema & tabular specs on Collection pages.</li>
+                      <li><strong>[Retest Verification]</strong> Trigger 12-run cycle to measure citation rate improvement.</li>
+                    </>
+                  )}
+                  {selectedPlatform === 'WooCommerce' && (
+                    <>
+                      <li><strong>[Bot Check]</strong> Configure Yoast/RankMath Robots.txt settings to explicitly allow AI crawlers.</li>
+                      <li><strong>[Schema.org]</strong> Deploy JSON-LD Schema markup for LocalBusiness & Products.</li>
+                      <li><strong>[Extractability]</strong> Insert FAQ blocks and comparison HTML tables into category descriptions.</li>
+                      <li><strong>[Retest Verification]</strong> Verify brand mention rate across prompt suite.</li>
+                    </>
+                  )}
+                  {selectedPlatform === 'Custom' && (
+                    <>
+                      <li><strong>[Robots & WAF]</strong> Ensure Cloudflare/WAF permits Google-Extended and GPTBot user agents.</li>
+                      <li><strong>[Entity Schema]</strong> Deploy Next.js/React Head JSON-LD for Organization and Product schemas.</li>
+                      <li><strong>[Structured Tables]</strong> Render HTML comparison tables in page SSR output.</li>
+                      <li><strong>[Retest Loop]</strong> Execute retest cycle on RAG Signal to measure Before/After diff.</li>
+                    </>
+                  )}
+                </ul>
+              </div>
+
+              <div className="pt-3 border-t border-[#E5E7EB] dark:border-[#1E293B] flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowPlaybookModal(false)}
+                  className="px-3.5 py-1.5 border border-[#D1D5DB] dark:border-[#334155] rounded text-xs font-bold uppercase tracking-wider text-[#374151] dark:text-[#CBD5E1] hover:bg-[#F3F4F6] dark:hover:bg-[#334155]"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    // Generate 4 platform actions
+                    const targetPromptId = prompts[0]?.id || '';
+                    const platformItems = [
+                      {
+                        title: `[${selectedPlatform}] Configure AI Bot Allow Rules & Sitemap in Robots.txt`,
+                        why: `Ensure Gemini (Google-Extended), GPTBot, and PerplexityBot are explicitly permitted in ${selectedPlatform} SEO settings, and that Sitemap is declared.`,
+                        exactRecommendation: `Go to ${selectedPlatform} Admin -> SEO Settings -> Robots.txt. Add User-agent: Google-Extended Allow: / and append Sitemap: https://${client.domain || 'domain.com'}/sitemap.xml.`,
+                        priority: 'Critical' as const,
+                        effort: 'Low' as const,
+                      },
+                      {
+                        title: `[${selectedPlatform}] Inject LocalBusiness & Entity Schema.org JSON-LD`,
+                        why: `Model answers require explicit entity definitions to associate ${client.brandName} with local service offerings and area coverage.`,
+                        exactRecommendation: `In ${selectedPlatform} Head Scripts / Liquid theme, insert JSON-LD <script type="application/ld+json"> with LocalBusiness, areaServed, and sameAs links.`,
+                        priority: 'High' as const,
+                        effort: 'Low' as const,
+                      },
+                      {
+                        title: `[${selectedPlatform}] Add Answer Extractability FAQ & Comparison Tables`,
+                        why: `LLM generative models prioritize structured HTML tables and SSS (FAQ) blocks over plain product grids when recommending providers.`,
+                        exactRecommendation: `On main collection/category pages in ${selectedPlatform}, add HTML FAQ blocks covering lead times, minimum orders, and package details.`,
+                        priority: 'High' as const,
+                        effort: 'Medium' as const,
+                      },
+                      {
+                        title: `[${selectedPlatform}] Retest & Verify Before/After Visibility Diff`,
+                        why: `Validate if the foundation optimizations resulted in increased Mention Rate and Citation Rate across active prompt suite.`,
+                        exactRecommendation: `Run a new 12-run cycle on RAG Signal and compare Before/After metrics on the Actions tab.`,
+                        priority: 'Medium' as const,
+                        effort: 'Low' as const,
+                      },
+                    ];
+
+                    platformItems.forEach((item) => {
+                      onCreateAction({
+                        ownerId: client.ownerId,
+                        clientId: client.id,
+                        promptIds: targetPromptId ? [targetPromptId] : [],
+                        title: item.title,
+                        why: item.why,
+                        evidence: {
+                          observedFact: `${selectedPlatform} AEO Foundation Audit for ${client.brandName}`,
+                        },
+                        exactRecommendation: item.exactRecommendation,
+                        priority: item.priority,
+                        impact: 'High',
+                        effort: item.effort,
+                        validation: 'Execute retest cycle and verify brand mention & citation rates',
+                        status: 'Todo',
+                      });
+                    });
+
+                    setShowPlaybookModal(false);
+                  }}
+                  className="px-4 py-1.5 bg-[#4338CA] hover:bg-[#3730A3] text-white rounded text-xs font-bold uppercase tracking-wider shadow-xs flex items-center gap-1.5"
+                >
+                  <Zap className="w-3.5 h-3.5" /> Import 4 {selectedPlatform} Actions
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

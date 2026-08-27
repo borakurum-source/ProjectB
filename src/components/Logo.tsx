@@ -6,21 +6,24 @@ interface LogoProps {
 
 export function Logo({ className = '', size = 'md', showSubtitle = true }: LogoProps) {
   const textSizes = {
-    sm: 'text-sm tracking-[0.18em]',
-    md: 'text-base tracking-[0.2em]',
-    lg: 'text-xl tracking-[0.22em]',
+    sm: 'text-base tracking-tighter',
+    md: 'text-lg sm:text-xl tracking-tighter',
+    lg: 'text-2xl sm:text-3xl tracking-tighter',
   };
 
   return (
-    <div className={`inline-flex flex-col ${className}`}>
+    <div className={`inline-flex flex-col select-none ${className}`}>
       <div 
-        className={`font-black uppercase leading-none text-[#0F172A] dark:text-[#F8FAFC] ${textSizes[size]}`}
-        style={{ fontFamily: "'Syne', 'Space Grotesk', sans-serif" }}
+        className={`font-black uppercase leading-none text-[#111827] dark:text-[#F8FAFC] ${textSizes[size]}`}
+        style={{ fontFamily: "'Manrope', sans-serif", fontWeight: 900 }}
       >
-        RAG <span className="text-[#4338CA] dark:text-[#818CF8]">SIGNAL</span>
+        RAGSIGNAL
       </div>
       {showSubtitle && (
-        <div className="text-[9px] text-[#64748B] dark:text-[#94A3B8] tracking-[0.22em] uppercase font-mono mt-1 font-bold">
+        <div 
+          className="text-[9px] text-[#6B7280] dark:text-[#94A3B8] tracking-wider uppercase mt-1 font-extrabold"
+          style={{ fontFamily: "'Manrope', sans-serif" }}
+        >
           AEO & GEO Intelligence
         </div>
       )}

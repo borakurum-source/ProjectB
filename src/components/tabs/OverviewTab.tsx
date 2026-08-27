@@ -1,13 +1,14 @@
 import { useState } from 'react';
-import { Client, PromptAggregate, CycleAggregate, ActionItem, Prompt } from '../../types';
+import { Client, PromptAggregate, CycleAggregate, ActionItem, Prompt, Run } from '../../types';
 import { ShareOfVoiceChart } from '../charts/ShareOfVoiceChart';
 import { PerformanceTrendsChart } from '../charts/PerformanceTrendsChart';
+import { PromptPerformanceTrendsChart } from '../charts/PromptPerformanceTrendsChart';
 import { PresenceHeatmap } from '../charts/PresenceHeatmap';
 import { CompetitorHeatmap } from '../charts/CompetitorHeatmap';
 import { DomainLeaderboard } from '../charts/DomainLeaderboard';
 import { GscGa4VisibilityChart } from '../charts/GscGa4VisibilityChart';
 import { CorrelationScatterChart } from '../charts/CorrelationScatterChart';
-import { Radio, AlertCircle, ArrowUpRight, CheckCircle2, ShieldCheck, Play, ArrowRight, Grid, LayoutList } from 'lucide-react';
+import { Radio, AlertCircle, ArrowUpRight, CheckCircle2, ShieldCheck, Play, ArrowRight, Grid, LayoutList, TrendingUp, Activity } from 'lucide-react';
 
 interface OverviewTabProps {
   client: Client;
@@ -16,6 +17,7 @@ interface OverviewTabProps {
   latestCycle: CycleAggregate | null;
   actions: ActionItem[];
   prompts: Prompt[];
+  runs?: Run[];
   onInspectPrompt: (promptId: string) => void;
   onOpenRunModal: () => void;
   onNavigateTab: (tab: 'Prompts' | 'Competitors' | 'Pages' | 'Actions') => void;
@@ -29,23 +31,25 @@ export function OverviewTab({
   latestCycle,
   actions,
   prompts,
+  runs = [],
   onInspectPrompt,
   onOpenRunModal,
   onNavigateTab,
   onClearDemoData,
 }: OverviewTabProps) {
   const [heatmapMode, setHeatmapMode] = useState<'standard' | 'correlation'>('standard');
+  const [trendsMode, setTrendsMode] = useState<'aggregate' | 'prompts'>('aggregate');
 
   const totalRunsInLatest = latestCycle?.totalRuns ?? 0;
-  const clientSov = latestCycle?.shareOfVoice[client.brandName]?.share ?? 0;
+  const clientSov = latestCycle?.shareOfVoice?.[client.brandName]?.share ?? 0;
   const mentionRate = latestCycle?.overallMentionRate ?? 0;
   const citationRate = latestCycle?.overallCitationRate ?? 0;
   const volatileCount = latestCycle?.volatilityCount ?? 0;
 
-  const topCompetitor = client.competitorBrands
+  const topCompetitor = (client.competitorBrands || [])
     .map((comp) => ({
       brand: comp,
-      share: latestCycle?.shareOfVoice[comp]?.share ?? 0,
+      share: latestCycle?.shareOfVoice?.[comp]?.share ?? 0,
     }))
     .sort((a, b) => b.share - a.share)[0];
 
@@ -53,33 +57,27 @@ export function OverviewTab({
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      {/* Demo client alert banner if applicable */}
-      {client.isDemo && (
-        <div className="bg-[#FFFBEB] dark:bg-[#78350F]/20 border border-[#FDE68A] dark:border-[#B45309] p-3.5 sm:px-4 sm:py-3 text-xs text-[#92400E] dark:text-[#FDE68A] flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-none md:rounded-sm">
-          <div className="flex items-start sm:items-center gap-2">
-            <span className="bg-[#FEF3C7] dark:bg-[#B45309] text-[#D97706] dark:text-[#FEF3C7] font-bold px-1.5 py-0.5 rounded-[2px] text-[10px] tracking-wider uppercase border border-[#FDE68A] dark:border-[#D97706] shrink-0 mt-0.5 sm:mt-0">
-              DEMO DATA
-            </span>
-            <span>
-              Viewing benchmark demo data for <strong>{client.brandName}</strong>. Ready to track your real brand?
-            </span>
+      {/* Live Measurement Callout when no cycles exist yet */}
+      {totalRunsInLatest === 0 && (
+        <div className="bg-[#F8FAFC] dark:bg-[#0F172A] border border-[#CBD5E1] dark:border-[#334155] p-5 text-sm text-[#1E293B] dark:text-[#F8FAFC] flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <span className="bg-[#111827] dark:bg-[#4338CA] text-white font-bold px-2 py-0.5 text-[10px] tracking-wider uppercase">
+                100% CANLI VERİ
+              </span>
+              <strong className="text-sm font-semibold">{client.brandName} İçin İlk Canlı AI Görünürlük Döngüsünü Başlatın</strong>
+            </div>
+            <p className="text-xs text-[#64748B] dark:text-[#94A3B8]">
+              RAG Signal yapay/tahmini veri üretmez. Google Search ile güçlendirilmiş Gemini 2.5/3.7 motorunda her prompt için gerçek zamanlı $n=3$ arama gerçekleştirip marka görünürlüğünü ve kaynak domainleri çıkarır.
+            </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-            {onClearDemoData && (
-              <button
-                onClick={onClearDemoData}
-                className="px-3 py-1.5 sm:py-1 bg-white dark:bg-[#1E293B] hover:bg-[#F3F4F6] dark:hover:bg-[#334155] text-[#92400E] dark:text-[#FDE68A] font-bold uppercase tracking-wider text-[11px] rounded border border-[#FDE68A] dark:border-[#B45309] transition-colors shadow-xs"
-              >
-                Clear Mock Data & Track Real Brand
-              </button>
-            )}
-            <button
-              onClick={onOpenRunModal}
-              className="px-3 py-1.5 sm:py-1 bg-[#111827] dark:bg-[#4338CA] hover:bg-[#1f2937] dark:hover:bg-[#3730A3] text-white font-bold uppercase tracking-wider text-[11px] rounded transition-colors shadow-xs"
-            >
-              Run Real Cycle
-            </button>
-          </div>
+          <button
+            onClick={onOpenRunModal}
+            className="px-4 py-2.5 bg-[#111827] dark:bg-[#4338CA] hover:bg-[#1f2937] dark:hover:bg-[#3730A3] text-white font-bold uppercase tracking-wider text-xs shrink-0 inline-flex items-center gap-2 shadow-xs transition-colors"
+          >
+            <Play className="w-4 h-4 fill-white" />
+            Canlı Döngü Başlat ({prompts.filter(p => p.active).length} Prompt × 3)
+          </button>
         </div>
       )}
 
@@ -150,13 +148,58 @@ export function OverviewTab({
         </div>
       </section>
 
-      {/* Performance Trends View (Recharts: Mention and Citation rates over last 5 cycles) */}
-      <section>
-        <PerformanceTrendsChart
-          cycles={cycleAggregates}
-          client={client}
-          maxCycles={5}
-        />
+      {/* Performance Trends Section (Recharts: Prompt performance trends vs time over last 5 cycles) */}
+      <section className="space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-bold uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC]">
+              Trends View:
+            </span>
+            <div className="inline-flex w-full sm:w-auto border border-[#D1D5DB] dark:border-[#334155] p-0.5 bg-[#F9FAFB] dark:bg-[#1E293B] rounded-xs">
+              <button
+                onClick={() => setTrendsMode('aggregate')}
+                className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider transition-colors ${
+                  trendsMode === 'aggregate'
+                    ? 'bg-white dark:bg-[#0F172A] text-[#4338CA] dark:text-[#818CF8] shadow-xs border border-[#E5E7EB] dark:border-[#334155]'
+                    : 'text-[#6B7280] dark:text-[#94A3B8] hover:text-[#111827] dark:hover:text-[#F8FAFC]'
+                }`}
+              >
+                <Activity className="w-3.5 h-3.5 shrink-0" />
+                <span className="sm:hidden">Aggregate (5C)</span>
+                <span className="hidden sm:inline">Historical Aggregate Mention Rate (5 Cycles)</span>
+              </button>
+              <button
+                onClick={() => setTrendsMode('prompts')}
+                className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-2 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider transition-colors ${
+                  trendsMode === 'prompts'
+                    ? 'bg-white dark:bg-[#0F172A] text-[#4338CA] dark:text-[#818CF8] shadow-xs border border-[#E5E7EB] dark:border-[#334155]'
+                    : 'text-[#6B7280] dark:text-[#94A3B8] hover:text-[#111827] dark:hover:text-[#F8FAFC]'
+                }`}
+              >
+                <TrendingUp className="w-3.5 h-3.5 shrink-0" />
+                <span className="sm:hidden">Per-Prompt (5C)</span>
+                <span className="hidden sm:inline">Per-Prompt Trajectories (5 Cycles)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {trendsMode === 'prompts' ? (
+          <PromptPerformanceTrendsChart
+            cycles={cycleAggregates}
+            runs={runs}
+            prompts={prompts}
+            client={client}
+            maxCycles={5}
+            onInspectPrompt={onInspectPrompt}
+          />
+        ) : (
+          <PerformanceTrendsChart
+            cycles={cycleAggregates}
+            client={client}
+            maxCycles={5}
+          />
+        )}
       </section>
 
       {/* Flagship View: Prompt × Brand Presence Heatmap & Competitor Matrix Toggle */}
@@ -166,10 +209,10 @@ export function OverviewTab({
             <span className="text-xs font-bold uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC]">
               Heatmap:
             </span>
-            <div className="inline-flex flex-wrap border border-[#D1D5DB] dark:border-[#334155] p-0.5 bg-[#F9FAFB] dark:bg-[#1E293B] rounded-xs">
+            <div className="inline-flex w-full sm:w-auto border border-[#D1D5DB] dark:border-[#334155] p-0.5 bg-[#F9FAFB] dark:bg-[#1E293B] rounded-xs">
               <button
                 onClick={() => setHeatmapMode('standard')}
-                className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 text-xs font-bold uppercase tracking-wider transition-colors ${
+                className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider transition-colors ${
                   heatmapMode === 'standard'
                     ? 'bg-white dark:bg-[#0F172A] text-[#111827] dark:text-[#F8FAFC] shadow-xs border border-[#E5E7EB] dark:border-[#334155]'
                     : 'text-[#6B7280] dark:text-[#94A3B8] hover:text-[#111827] dark:hover:text-[#F8FAFC]'
@@ -180,7 +223,7 @@ export function OverviewTab({
               </button>
               <button
                 onClick={() => setHeatmapMode('correlation')}
-                className={`inline-flex items-center gap-1.5 px-2.5 sm:px-3 py-1 text-xs font-bold uppercase tracking-wider transition-colors ${
+                className={`flex-1 sm:flex-none inline-flex items-center justify-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-[11px] sm:text-xs font-bold uppercase tracking-wider transition-colors ${
                   heatmapMode === 'correlation'
                     ? 'bg-white dark:bg-[#0F172A] text-[#111827] dark:text-[#F8FAFC] shadow-xs border border-[#E5E7EB] dark:border-[#334155]'
                     : 'text-[#6B7280] dark:text-[#94A3B8] hover:text-[#111827] dark:hover:text-[#F8FAFC]'

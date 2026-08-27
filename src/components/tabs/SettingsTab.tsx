@@ -1,60 +1,23 @@
 import { useState, useEffect, FormEvent } from 'react';
-import { Client } from '../../types';
-import { Save, Download, RefreshCw, Check, Key, Sparkles } from 'lucide-react';
+import { Client, Prompt } from '../../types';
+import { Save, Download, RefreshCw, Check, Key, Sparkles, Server, Terminal, Copy, Languages, AlertTriangle, CheckCircle2, Globe, Trash2 } from 'lucide-react';
 import { GoogleIntegrationCard } from '../GoogleIntegrationCard';
+import { validateClientLanguage } from '../../lib/languageValidator';
 
 interface SettingsTabProps {
   client: Client;
+  prompts?: Prompt[];
   onUpdateClient: (updated: Partial<Client>) => void;
+  onDeleteClient?: (clientId: string) => void;
   onClearDemoData?: () => void;
   exportDataJson: () => void;
 }
 
-// All grounding-capable (web_search-enabled) models verified working through the
-// Perplexity Agent API (POST /v1/agent), grouped by provider. Kept in sync manually —
-// re-verify against https://docs.perplexity.ai/docs/agent-api/models before adding entries.
-const PERPLEXITY_GROUNDING_MODELS: { provider: string; models: { id: string; label: string }[] }[] = [
-  {
-    provider: 'OpenAI',
-    models: [
-      { id: 'openai/gpt-5.6-sol', label: 'GPT-5.6 Sol (Recommended)' },
-      { id: 'openai/gpt-5.6-terra', label: 'GPT-5.6 Terra' },
-      { id: 'openai/gpt-5.5', label: 'GPT-5.5' },
-    ],
-  },
-  {
-    provider: 'Anthropic',
-    models: [
-      { id: 'anthropic/claude-opus-5', label: 'Claude Opus 5 (Flagship)' },
-      { id: 'anthropic/claude-sonnet-5', label: 'Claude Sonnet 5' },
-      { id: 'anthropic/claude-haiku-4-5', label: 'Claude Haiku 4.5 (Fast/Cheap)' },
-    ],
-  },
-  {
-    provider: 'Google',
-    models: [
-      { id: 'google/gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro Preview' },
-      { id: 'google/gemini-3.7-flash', label: 'Gemini 3.7 Flash' },
-    ],
-  },
-  {
-    provider: 'xAI',
-    models: [
-      { id: 'xai/grok-4.6', label: 'Grok 4.6' },
-    ],
-  },
-  {
-    provider: 'Perplexity',
-    models: [
-      { id: 'perplexity/sonar', label: 'Sonar (native, fastest/cheapest)' },
-      { id: 'perplexity/deepseek-v4-flash-0731', label: 'DeepSeek v4 Flash' },
-    ],
-  },
-];
-
 export function SettingsTab({
   client,
+  prompts = [],
   onUpdateClient,
+  onDeleteClient,
   onClearDemoData,
   exportDataJson,
 }: SettingsTabProps) {
@@ -77,12 +40,6 @@ export function SettingsTab({
   const [defaultN, setDefaultN] = useState<number>(client.defaultRunsPerPrompt || 3);
   const [savedSuccess, setSavedSuccess] = useState(false);
 
-  // Perplexity API Key state
-  const [perplexityKeyInput, setPerplexityKeyInput] = useState('');
-  const [perplexityConfigured, setPerplexityConfigured] = useState(false);
-  const [savingKey, setSavingKey] = useState(false);
-  const [keySaveMsg, setKeySaveMsg] = useState('');
-
   // Firecrawl API Key state
   const [firecrawlKeyInput, setFirecrawlKeyInput] = useState('');
   const [firecrawlConfigured, setFirecrawlConfigured] = useState(false);
@@ -90,10 +47,25 @@ export function SettingsTab({
   const [firecrawlSaveMsg, setFirecrawlSaveMsg] = useState('');
 
   // Gemini Model State
-  const [geminiModel, setGeminiModel] = useState('gemini-3.7-flash');
+  const [geminiModel, setGeminiModel] = useState('gemini-3.6-flash');
 
-  // Perplexity Agent Model State
-  const [perplexityModel, setPerplexityModel] = useState('openai/gpt-5.6-sol');
+  // MCP Server State
+  const [mcpInfo, setMcpInfo] = useState<any>(null);
+  const [testingMcp, setTestingMcp] = useState(false);
+  const [copiedMcpSnippet, setCopiedMcpSnippet] = useState(false);
+
+  const fetchMcpInfo = async () => {
+    setTestingMcp(true);
+    try {
+      const res = await fetch('/api/mcp/info');
+      const data = await res.json();
+      setMcpInfo(data);
+    } catch (err) {
+      console.error('Failed to fetch MCP info', err);
+    } finally {
+      setTestingMcp(false);
+    }
+  };
 
   // Sync local input states when client prop updates
   useEffect(() => {
@@ -119,20 +91,15 @@ export function SettingsTab({
     fetch('/api/health')
       .then((res) => res.json())
       .then((data) => {
-        if (data?.perplexityApiKeyConfigured) {
-          setPerplexityConfigured(true);
-        }
         if (data?.firecrawlApiKeyConfigured) {
           setFirecrawlConfigured(true);
         }
         if (data?.geminiModel) {
           setGeminiModel(data.geminiModel);
         }
-        if (data?.perplexityModel) {
-          setPerplexityModel(data.perplexityModel);
-        }
       })
       .catch(() => {});
+    fetchMcpInfo();
   }, []);
 
   const handleModelChange = async (newModel: string) => {
@@ -145,46 +112,6 @@ export function SettingsTab({
       });
     } catch (err) {
       console.error('Failed to update Gemini model', err);
-    }
-  };
-
-  const handlePerplexityModelChange = async (newModel: string) => {
-    setPerplexityModel(newModel);
-    try {
-      await fetch('/api/settings/perplexity-model', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ model: newModel }),
-      });
-    } catch (err) {
-      console.error('Failed to update Perplexity model', err);
-    }
-  };
-
-  const handleSavePerplexityKey = async (e: FormEvent) => {
-    e.preventDefault();
-    setSavingKey(true);
-    setKeySaveMsg('');
-    try {
-      const res = await fetch('/api/settings/perplexity-key', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: perplexityKeyInput }),
-      });
-      const data = await res.json();
-      if (data.configured) {
-        setPerplexityConfigured(true);
-        setKeySaveMsg('Perplexity Agent engine activated!');
-        setPerplexityKeyInput('');
-      } else {
-        setPerplexityConfigured(false);
-        setKeySaveMsg('API Key cleared.');
-      }
-    } catch {
-      setKeySaveMsg('Failed to update API key.');
-    } finally {
-      setSavingKey(false);
-      setTimeout(() => setKeySaveMsg(''), 3000);
     }
   };
 
@@ -346,8 +273,26 @@ export function SettingsTab({
     setTimeout(() => setSavedSuccess(false), 2500);
   };
 
+  const draftClient: Client = {
+    ...client,
+    brandName,
+    domain,
+    industry,
+    market,
+    language,
+    city,
+    shortSummary,
+    positioning,
+    detailedDescription,
+    targetAudience,
+    productsServices,
+    keyDifferentiators,
+  };
+
+  const validationReport = validateClientLanguage(draftClient, prompts);
+
   return (
-    <div className="space-y-6 max-w-4xl">
+    <div className="space-y-6">
       {/* Client Profile Settings */}
       <form onSubmit={handleSave} className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs space-y-4">
         <div className="flex items-center justify-between border-b border-[#F3F4F6] dark:border-[#1E293B] pb-3">
@@ -363,12 +308,11 @@ export function SettingsTab({
             <button
               type="button"
               onClick={handleGenerateProfile}
-              disabled={generatingProfile || !brandName || !domain || !perplexityConfigured}
-              title={!perplexityConfigured ? 'Requires a Perplexity API key — configure it below first.' : undefined}
+              disabled={generatingProfile || !brandName || !domain}
               className="px-3 py-1.5 bg-[#EEF2FF] dark:bg-[#312E81] hover:bg-[#E0E7FF] dark:hover:bg-[#3730A3] border border-[#C7D2FE] dark:border-[#4338CA] text-[#4338CA] dark:text-[#A5B4FC] disabled:opacity-50 rounded text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5 shadow-xs"
             >
               <Sparkles className={`w-3.5 h-3.5 ${generatingProfile ? 'animate-spin' : ''}`} />
-              {generatingProfile ? 'Generating...' : !perplexityConfigured ? 'Auto-Generate (Perplexity key required)' : 'Auto-Generate via AI'}
+              {generatingProfile ? 'Generating...' : 'Auto-Generate via AI'}
             </button>
             <button
               type="submit"
@@ -613,6 +557,78 @@ export function SettingsTab({
         </div>
       </form>
 
+      {/* Language Consistency & AI Output Validation Card */}
+      <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-[#F3F4F6] dark:border-[#1E293B] pb-3 gap-2">
+          <div className="flex items-center gap-2">
+            <Languages className="w-4 h-4 text-[#4338CA] dark:text-[#818CF8]" />
+            <div>
+              <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827] dark:text-[#F8FAFC]">
+                AI Language Consistency & Alignment Indicator
+              </h3>
+              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5">
+                Validates that auto-generated brand profile fields and research prompts match target locale (<strong className="font-semibold text-[#111827] dark:text-[#F8FAFC]">{validationReport.targetLanguageLabel}</strong>).
+              </p>
+            </div>
+          </div>
+          <div className="shrink-0">
+            {validationReport.isMatching ? (
+              <span className="px-3 py-1 bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded text-xs font-bold inline-flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                Language Aligned ({validationReport.targetLanguageLabel})
+              </span>
+            ) : (
+              <span className="px-3 py-1 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded text-xs font-bold inline-flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                {validationReport.deviations.length} Language Deviation(s)
+              </span>
+            )}
+          </div>
+        </div>
+
+        {validationReport.isMatching ? (
+          <p className="text-xs text-[#4B5563] dark:text-[#94A3B8] flex items-center gap-2 pt-1">
+            <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
+            All {validationReport.totalChecked} checked client profile fields and prompts adhere strictly to {validationReport.targetLanguageLabel}.
+          </p>
+        ) : (
+          <div className="space-y-3 pt-1">
+            <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 rounded text-xs space-y-2.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <p className="font-semibold text-amber-900 dark:text-amber-200 flex items-center gap-1.5">
+                  <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400 shrink-0" />
+                  Deviating Content Detected ({validationReport.deviations.length} of {validationReport.totalChecked} checked items)
+                </p>
+                <button
+                  type="button"
+                  onClick={handleGenerateProfile}
+                  disabled={generatingProfile}
+                  className="px-3 py-1 bg-amber-600 hover:bg-amber-700 text-white rounded text-[11px] font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1 shadow-xs self-start sm:self-auto"
+                >
+                  <Sparkles className={`w-3 h-3 ${generatingProfile ? 'animate-spin' : ''}`} />
+                  Re-Generate Profile in {validationReport.targetLanguageLabel}
+                </button>
+              </div>
+              <ul className="divide-y divide-amber-200/80 dark:divide-amber-800/50 text-[11px]">
+                {validationReport.deviations.map((dev, idx) => (
+                  <li key={idx} className="py-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div>
+                      <span className="font-bold text-amber-950 dark:text-amber-100">{dev.label}</span>
+                      <p className="text-amber-800/90 dark:text-amber-300/90 italic mt-0.5 font-mono text-[10px]">"{dev.snippet}"</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="px-2 py-0.5 bg-amber-200/80 dark:bg-amber-900/60 text-amber-900 dark:text-amber-200 rounded text-[10px] font-medium border border-amber-300 dark:border-amber-700">
+                        Detected: {dev.detectedLanguage} (Expected: {dev.expectedLanguage})
+                      </span>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* Engine Adapters & Credentials */}
       <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs space-y-4">
         <div>
@@ -638,9 +654,9 @@ export function SettingsTab({
                     <span className="text-[10px] bg-[#ECFDF5] dark:bg-[#064E3B] text-[#065F46] dark:text-[#A7F3D0] border border-[#A7F3D0] dark:border-[#065F46] px-1.5 py-0.5 font-bold uppercase tracking-wider">
                       ACTIVE
                     </span>
-                    {geminiModel === 'gemini-3.7-flash' && (
+                    {geminiModel === 'gemini-3.6-flash' && (
                       <span className="text-[10px] bg-[#EEF2FF] dark:bg-[#312E81] text-[#4338CA] dark:text-[#A5B4FC] border border-[#C7D2FE] dark:border-[#4338CA] px-1.5 py-0.5 font-bold uppercase tracking-wider">
-                        GEMINI 3.7
+                        GEMINI 3.6
                       </span>
                     )}
                   </div>
@@ -657,8 +673,8 @@ export function SettingsTab({
               <span className="text-xs font-medium text-[#374151] dark:text-[#CBD5E1]">Target Gemini Model:</span>
               <div className="flex items-center gap-1.5 flex-wrap">
                 {[
-                  { id: 'gemini-3.7-flash', label: 'Gemini 3.7 Flash (Recommended)' },
-                  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash' },
+                  { id: 'gemini-3.6-flash', label: 'Gemini 3.6 Flash (Recommended)' },
+                  { id: 'gemini-flash-latest', label: 'Gemini Flash Latest' },
                 ].map((m) => (
                   <button
                     key={m.id}
@@ -675,97 +691,6 @@ export function SettingsTab({
                 ))}
               </div>
             </div>
-          </div>
-
-          {/* Perplexity Sonar */}
-          <div className="p-4 border border-[#E5E7EB] dark:border-[#1E293B] bg-[#F9FAFB] dark:bg-[#1E293B] space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-[#111827] dark:bg-[#312E81] flex items-center justify-center text-white font-bold text-xs">
-                  P
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-xs text-[#111827] dark:text-[#F8FAFC]">Perplexity Agent (Multi-Provider Grounding)</span>
-                    {perplexityConfigured ? (
-                      <span className="text-[10px] bg-[#ECFDF5] dark:bg-[#064E3B] text-[#065F46] dark:text-[#A7F3D0] border border-[#A7F3D0] dark:border-[#065F46] px-1.5 py-0.5 font-bold uppercase tracking-wider">
-                        ACTIVE
-                      </span>
-                    ) : (
-                      <span className="text-[10px] bg-[#FFFBEB] dark:bg-[#78350F] text-[#D97706] dark:text-[#FDE68A] border border-[#FDE68A] dark:border-[#B45309] px-1.5 py-0.5 font-bold uppercase tracking-wider">
-                        KEY REQUIRED
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5">
-                    Model: <code className="text-[#111827] dark:text-[#F8FAFC] font-mono font-bold">{perplexityModel}</code> • Web Grounded Answers & Citations
-                  </div>
-                </div>
-              </div>
-
-              <div className="text-xs font-bold uppercase tracking-wider">
-                {perplexityConfigured ? (
-                  <span className="text-[#065F46] dark:text-[#34D399]">Configured & Ready</span>
-                ) : (
-                  <span className="text-[#9CA3AF] dark:text-[#64748B]">Enter Key Below to Enable</span>
-                )}
-              </div>
-            </div>
-
-            {/* Perplexity Model Selector — all grounding-capable models the Agent API allows */}
-            {perplexityConfigured && (
-              <div className="pt-2 border-t border-[#E5E7EB] dark:border-[#334155] space-y-1.5">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-[#374151] dark:text-[#CBD5E1]">
-                    Grounding Model for Prompt Checking (Call 1 measurement runs):
-                  </span>
-                  <select
-                    value={perplexityModel}
-                    onChange={(e) => handlePerplexityModelChange(e.target.value)}
-                    className="px-2.5 py-1.5 text-[11px] font-mono font-bold rounded border bg-white dark:bg-[#0F172A] text-[#111827] dark:text-[#F8FAFC] border-[#D1D5DB] dark:border-[#334155] focus:border-[#111827] dark:focus:border-[#6366F1] focus:outline-hidden cursor-pointer"
-                  >
-                    {PERPLEXITY_GROUNDING_MODELS.map((group) => (
-                      <optgroup key={group.provider} label={group.provider}>
-                        {group.models.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.label}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
-                </div>
-                <div className="text-[10px] text-[#9CA3AF] dark:text-[#64748B]">
-                  Every model above runs with the <code className="font-mono">web_search</code> tool enabled — the actual model used is stored and shown on each run. All {PERPLEXITY_GROUNDING_MODELS.reduce((n, g) => n + g.models.length, 0)} options are the grounding-capable models the Perplexity Agent API currently allows.
-                </div>
-              </div>
-            )}
-
-            {/* Perplexity Key Form */}
-            <form onSubmit={handleSavePerplexityKey} className="pt-2 border-t border-[#E5E7EB] dark:border-[#334155] flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-              <div className="relative flex-1">
-                <input
-                  type="password"
-                  value={perplexityKeyInput}
-                  onChange={(e) => setPerplexityKeyInput(e.target.value)}
-                  placeholder={perplexityConfigured ? "PERPLEXITY_API_KEY is configured (Enter new key to update)" : "Enter PERPLEXITY_API_KEY (pplx-...)"}
-                  className="w-full p-2 pl-8 bg-white dark:bg-[#0F172A] border border-[#D1D5DB] dark:border-[#334155] rounded text-xs text-[#111827] dark:text-[#F8FAFC] font-mono focus:border-[#111827] dark:focus:border-[#6366F1] focus:outline-hidden"
-                />
-                <Key className="w-3.5 h-3.5 text-[#9CA3AF] dark:text-[#64748B] absolute left-2.5 top-2.5" />
-              </div>
-              <button
-                type="submit"
-                disabled={savingKey}
-                className="px-3.5 py-2 bg-[#111827] dark:bg-[#4338CA] hover:bg-black dark:hover:bg-[#3730A3] text-white rounded text-xs font-bold uppercase tracking-wider transition-colors shrink-0 inline-flex items-center justify-center gap-1"
-              >
-                {savingKey ? 'Saving...' : 'Save API Key'}
-              </button>
-            </form>
-            {keySaveMsg && (
-              <p className="text-xs font-semibold text-[#065F46] dark:text-[#34D399] animate-fade-in">
-                {keySaveMsg}
-              </p>
-            )}
           </div>
 
           {/* Firecrawl Scrape, Search & Map */}
@@ -846,6 +771,141 @@ export function SettingsTab({
         <GoogleIntegrationCard clientDomain={client.domain} clientBrandName={client.brandName} />
       </div>
 
+      {/* MCP (Model Context Protocol) Server */}
+      <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-[#E5E7EB] dark:border-[#1E293B] pb-3">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-[#4338CA] flex items-center justify-center text-white rounded font-bold">
+              <Server className="w-4 h-4" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827] dark:text-[#F8FAFC]">
+                  Model Context Protocol (MCP) Server
+                </h3>
+                <span className="text-[10px] bg-[#ECFDF5] dark:bg-[#064E3B] text-[#065F46] dark:text-[#A7F3D0] border border-[#A7F3D0] dark:border-[#065F46] px-2 py-0.5 font-bold uppercase tracking-wider rounded">
+                  ONLINE & LISTENING
+                </span>
+              </div>
+              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5">
+                Expose RAG Signal AEO/GEO visibility metrics, share of voice, citations, and prompts to external AI clients (Cursor, Claude Desktop, Auto-agents).
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={fetchMcpInfo}
+            disabled={testingMcp}
+            className="px-3 py-1.5 bg-[#F3F4F6] dark:bg-[#1E293B] hover:bg-[#E5E7EB] dark:hover:bg-[#334155] text-[#111827] dark:text-[#F8FAFC] rounded text-xs font-bold uppercase tracking-wider border border-[#D1D5DB] dark:border-[#334155] inline-flex items-center gap-1.5 shrink-0 transition-colors"
+          >
+            <Terminal className="w-3.5 h-3.5" />
+            {testingMcp ? 'Testing...' : 'Test MCP Capabilities'}
+          </button>
+        </div>
+
+        {/* Endpoints Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div className="p-3 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-bold text-[#6B7280] dark:text-[#94A3B8] uppercase">SSE Stream Endpoint</span>
+              <button
+                type="button"
+                onClick={() => {
+                  const sseUrl = mcpInfo?.endpoints?.sse || `${window.location.origin}/api/mcp/sse`;
+                  navigator.clipboard.writeText(sseUrl);
+                  setCopiedMcpSnippet(true);
+                  setTimeout(() => setCopiedMcpSnippet(false), 2000);
+                }}
+                className="text-[10px] font-bold text-[#4338CA] dark:text-[#818CF8] hover:underline inline-flex items-center gap-1"
+                title="Copy SSE URL"
+              >
+                <Copy className="w-3 h-3" /> Copy URL
+              </button>
+            </div>
+            <div className="font-mono text-xs font-bold text-[#4338CA] dark:text-[#818CF8] mt-1 select-all break-all">
+              {mcpInfo?.endpoints?.sse || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/mcp/sse`}
+            </div>
+          </div>
+          <div className="p-3 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded">
+            <span className="text-[10px] font-bold text-[#6B7280] dark:text-[#94A3B8] uppercase">Message Postback Endpoint</span>
+            <div className="font-mono text-xs font-bold text-[#059669] dark:text-[#34D399] mt-1 select-all break-all">
+              {mcpInfo?.endpoints?.messages || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/mcp/messages`}
+            </div>
+          </div>
+          <div className="p-3 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded">
+            <span className="text-[10px] font-bold text-[#6B7280] dark:text-[#94A3B8] uppercase">Direct JSON-RPC Endpoint</span>
+            <div className="font-mono text-xs font-bold text-[#D97706] dark:text-[#FBBF24] mt-1 select-all break-all">
+              {mcpInfo?.endpoints?.rpc || `${typeof window !== 'undefined' ? window.location.origin : ''}/api/mcp/rpc`}
+            </div>
+          </div>
+        </div>
+
+        {/* Available MCP Tools & Capabilities */}
+        <div className="p-3 bg-[#F9FAFB] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] rounded space-y-2">
+          <span className="text-[10px] font-bold text-[#6B7280] dark:text-[#94A3B8] uppercase tracking-wider">
+            Exposed MCP Tools ({mcpInfo?.capabilities?.tools?.length || 7}):
+          </span>
+          <div className="flex flex-wrap gap-1.5">
+            {(mcpInfo?.capabilities?.tools || [
+              'list_clients',
+              'get_client_overview',
+              'list_prompts',
+              'get_share_of_voice',
+              'get_citation_leaderboard',
+              'get_latest_diagnostics',
+              'list_action_items',
+            ]).map((toolName: string) => (
+              <span key={toolName} className="font-mono text-[11px] bg-white dark:bg-[#0F172A] border border-[#D1D5DB] dark:border-[#334155] px-2 py-0.5 rounded text-[#374151] dark:text-[#CBD5E1]">
+                🛠️ {toolName}
+              </span>
+            ))}
+          </div>
+        </div>
+
+        {/* Configuration Code Blocks */}
+        <div className="space-y-3 pt-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-[#111827] dark:text-[#F8FAFC]">Cursor / Claude Desktop Integration Code:</span>
+            <button
+              type="button"
+              onClick={() => {
+                const textToCopy = JSON.stringify(mcpInfo?.configInstructions || {
+                  claudeDesktop: {
+                    mcpServers: {
+                      'rag-signal': {
+                        url: mcpInfo?.endpoints?.sse || `${window.location.origin}/api/mcp/sse`,
+                      },
+                    },
+                  },
+                }, null, 2);
+                navigator.clipboard.writeText(textToCopy);
+                setCopiedMcpSnippet(true);
+                setTimeout(() => setCopiedMcpSnippet(false), 2000);
+              }}
+              className="text-xs text-[#4338CA] dark:text-[#818CF8] hover:underline font-bold inline-flex items-center gap-1 cursor-pointer"
+            >
+              {copiedMcpSnippet ? <Check className="w-3.5 h-3.5 text-[#059669]" /> : <Copy className="w-3.5 h-3.5" />}
+              {copiedMcpSnippet ? 'Copied to Clipboard!' : 'Copy Config JSON'}
+            </button>
+          </div>
+
+          <pre className="p-3 bg-[#0F172A] text-[#F8FAFC] font-mono text-xs rounded overflow-x-auto border border-[#1E293B]">
+            {JSON.stringify(
+              mcpInfo?.configInstructions?.claudeDesktop || {
+                mcpServers: {
+                  'rag-signal': {
+                    url: `${mcpInfo?.endpoints?.sse || 'https://.../api/mcp/sse'}`,
+                  },
+                },
+              },
+              null,
+              2
+            )}
+          </pre>
+        </div>
+      </div>
+
       {/* Data Export & Reset */}
       <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-5 shadow-xs space-y-4">
         <div>
@@ -868,13 +928,49 @@ export function SettingsTab({
           {onClearDemoData && (
             <button
               onClick={onClearDemoData}
-              className="px-3.5 py-2 bg-[#EF4444] text-white hover:bg-[#DC2626] rounded text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5 shadow-xs"
+              className="px-3.5 py-2 bg-white dark:bg-[#1E293B] text-[#4B5563] dark:text-[#94A3B8] hover:bg-[#F3F4F6] dark:hover:bg-[#334155] rounded text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5 border border-[#D1D5DB] dark:border-[#334155] shadow-xs"
             >
-              <RefreshCw className="w-3.5 h-3.5" /> Clear Mock Data & Setup Real Client
+              <RefreshCw className="w-3.5 h-3.5" /> Reset Demo Workspace
             </button>
           )}
         </div>
       </div>
+
+      {/* Danger Zone: Brand Deletion */}
+      {onDeleteClient && (
+        <div className="bg-white dark:bg-[#0F172A] border border-[#FCA5A5] dark:border-[#7F1D1D] p-5 shadow-xs space-y-4 rounded-lg">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-[#DC2626] dark:text-[#EF4444]" />
+            <h3 className="text-xs font-bold uppercase tracking-widest text-[#DC2626] dark:text-[#EF4444]">
+              Danger Zone — Brand Workspace Management
+            </h3>
+          </div>
+          
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-1">
+            <div>
+              <div className="text-sm font-semibold text-[#111827] dark:text-[#F8FAFC]">
+                Delete Brand: <span className="font-bold">{client.brandName}</span> ({client.domain})
+              </div>
+              <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-0.5 max-w-xl">
+                Permanently delete this brand workspace, including all associated research prompts, scheduled run cycles, and visibility analytics history. This action cannot be undone.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm(`Are you sure you want to permanently delete "${client.brandName}" (${client.domain})?\n\nThis will remove all research prompts, run cycles, and analytics associated with this brand.`)) {
+                  onDeleteClient(client.id);
+                }
+              }}
+              className="px-4 py-2 bg-[#DC2626] hover:bg-[#B91C1C] text-white rounded text-xs font-bold uppercase tracking-wider transition-colors inline-flex items-center gap-1.5 shadow-xs shrink-0 self-start sm:self-auto cursor-pointer"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              Delete {client.brandName} Brand
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

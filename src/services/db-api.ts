@@ -17,9 +17,11 @@ router.get('/clients/:id', async (req, res) => {
 
 router.get('/clients', async (req, res) => {
   try {
-    const ownerId = req.query.ownerId as string;
-    if (!ownerId) return res.status(400).json({ error: 'ownerId query parameter required' });
-    const clients = await db.listClientsByOwner(ownerId);
+    const ownerId = (req.query.ownerId as string) || 'default-owner';
+    let clients = await db.listClientsByOwner(ownerId);
+    if (clients.length === 0) {
+      clients = await db.seedInitialDemoData(ownerId);
+    }
     res.json(clients);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -32,6 +34,15 @@ router.post('/clients', async (req, res) => {
     if (!client.id || !client.ownerId) return res.status(400).json({ error: 'Missing id or ownerId' });
     await db.saveClient(client);
     res.json(client);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/clients/:id', async (req, res) => {
+  try {
+    await db.deleteClient(req.params.id);
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -122,6 +133,16 @@ router.post('/cycles', async (req, res) => {
   }
 });
 
+router.post('/cycles/batch', async (req, res) => {
+  try {
+    const cycles: RunCycle[] = req.body.cycles || [];
+    await db.saveRunCycles(cycles);
+    res.json({ saved: cycles.length });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ====== Runs ======
 router.get('/runs/:id', async (req, res) => {
   try {
@@ -136,9 +157,16 @@ router.get('/runs/:id', async (req, res) => {
 router.get('/runs', async (req, res) => {
   try {
     const cycleId = req.query.cycleId as string;
-    if (!cycleId) return res.status(400).json({ error: 'cycleId query parameter required' });
-    const runs = await db.listRunsByCycle(cycleId);
-    res.json(runs);
+    const clientId = req.query.clientId as string;
+    if (cycleId) {
+      const runs = await db.listRunsByCycle(cycleId);
+      return res.json(runs);
+    }
+    if (clientId) {
+      const runs = await db.listRunsByClient(clientId);
+      return res.json(runs);
+    }
+    return res.status(400).json({ error: 'cycleId or clientId query parameter required' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -280,6 +308,28 @@ router.post('/settings', async (req, res) => {
     const ownerId = req.query.ownerId as string | undefined;
     await db.saveSettings(settings, ownerId);
     res.json(settings);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/purge-mock-data', async (req, res) => {
+  try {
+    const clientId = req.query.clientId as string | undefined;
+    const result = await db.purgeAllMockData(clientId);
+    res.json(result);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/batch-sync', async (req, res) => {
+  try {
+    const { client, prompts } = req.body;
+    if (client && client.id) {
+      await db.batchSaveClientAndPrompts(client, prompts);
+    }
+    res.json({ success: true });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }

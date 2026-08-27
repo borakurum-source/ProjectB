@@ -1,4 +1,7 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useCallback } from 'react';
+import { useAuth } from './context/AuthContext';
+import { useGlobalSync } from './hooks/useGlobalSync';
+import { LoginPage } from './components/LoginPage';
 import {
   Client,
   Prompt,
@@ -16,7 +19,10 @@ import { OverviewTab } from './components/tabs/OverviewTab';
 import { PromptsTab } from './components/tabs/PromptsTab';
 import { CompetitorsTab } from './components/tabs/CompetitorsTab';
 import { PagesTab } from './components/tabs/PagesTab';
+import { BrandMemoryTab } from './components/tabs/BrandMemoryTab';
+import { AeoStudioTab } from './components/tabs/AeoStudioTab';
 import { SearchInsightsTab } from './components/tabs/SearchInsightsTab';
+import { MarketTrendsTab } from './components/tabs/MarketTrendsTab';
 import { ActionsTab } from './components/tabs/ActionsTab';
 import { SettingsTab } from './components/tabs/SettingsTab';
 import { RunCycleModal } from './components/RunCycleModal';
@@ -25,19 +31,28 @@ import { DiagnosticModal } from './components/DiagnosticModal';
 import { OpportunityModal } from './components/OpportunityModal';
 import { ReportModal } from './components/ReportModal';
 import { OnboardingModal } from './components/OnboardingModal';
-import { FileText, Play } from 'lucide-react';
+import { FileText, Play, Loader2 } from 'lucide-react';
+import {
+  DEMO_CLIENT,
+  FILMFOLK_CLIENT,
+  FILMFOLK_PROMPTS,
+  DEMO_PROMPTS,
+} from './data/demoData';
 
 // Single-tenant for now: everything is scoped to this owner in the Neon DB
 // (see src/services/db-api.ts, mounted at /api/db in server.ts).
 const OWNER_ID = 'default-owner';
 
-type TabId = 'Overview' | 'Prompts' | 'Competitors' | 'Pages' | 'SearchInsights' | 'Actions' | 'Settings';
+type TabId = 'Overview' | 'Prompts' | 'Competitors' | 'Pages' | 'BrandMemory' | 'AeoStudio' | 'MarketTrends' | 'SearchInsights' | 'Actions' | 'Settings';
 
 const TAB_PATHS: Record<TabId, string> = {
   Overview: '/',
   Prompts: '/prompts',
   Competitors: '/competitors',
   Pages: '/pages',
+  BrandMemory: '/brand-memory',
+  AeoStudio: '/aeo-studio',
+  MarketTrends: '/market-trends',
   SearchInsights: '/search-insights',
   Actions: '/actions',
   Settings: '/settings',
@@ -49,6 +64,9 @@ function tabFromPath(pathname: string): TabId {
 }
 
 export default function App() {
+  const { user, loading } = useAuth();
+  const [guestMode, setGuestMode] = useState(false);
+
   // Dark Mode State with localStorage & media query fallback
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     try {
@@ -72,21 +90,91 @@ export default function App() {
 
   const toggleDarkMode = () => setDarkMode((prev) => !prev);
 
-  // Client Management State — persisted in Neon (/api/db/clients), not
-  // localStorage, so real client data survives across browsers/devices instead
-  // of living only in whichever browser last touched it.
+  // Client Management State — persisted directly in Cloud SQL / Firestore DB (/api/db/clients)
   const [clients, setClients] = useState<Client[]>([]);
   const [clientsLoaded, setClientsLoaded] = useState(false);
 
-  useEffect(() => {
-    fetch(`/api/db/clients?ownerId=${encodeURIComponent(OWNER_ID)}`)
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => {
-        if (Array.isArray(data)) setClients(data);
-      })
-      .catch((e) => console.error('Failed to load clients from DB:', e))
-      .finally(() => setClientsLoaded(true));
+  const [activeClientId, setActiveClientId] = useState<string>(() => {
+    try {
+      const savedId = localStorage.getItem('rag_signal_active_client_id');
+      if (savedId) return savedId;
+    } catch {}
+    return DEMO_CLIENT.id;
+  });
+
+  const getDeletedClientIds = (): string[] => {
+    try {
+      const raw = localStorage.getItem('rag_signal_deleted_client_ids');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  };
+
+  const loadClientsFromDb = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/db/clients?ownerId=${encodeURIComponent(OWNER_ID)}`);
+      if (res.ok) {
+        const data: Client[] = await res.json();
+        if (Array.isArray(data)) {
+          const deletedIds = getDeletedClientIds();
+          const filteredData = data.filter((c) => !deletedIds.includes(c.id));
+          setClients((prevClients) => {
+            const mergedMap = new Map<string, Client>();
+            prevClients.forEach((c) => {
+              if (!deletedIds.includes(c.id)) {
+                const norm = (c.domain || '').toLowerCase().trim().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+                const key = norm || c.id;
+                if (!mergedMap.has(key)) mergedMap.set(key, c);
+              }
+            });
+            filteredData.forEach((c) => {
+              const norm = (c.domain || '').toLowerCase().trim().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+              const key = norm || c.id;
+              mergedMap.set(key, c);
+            });
+
+            const mergedList = Array.from(mergedMap.values());
+            const savedId = localStorage.getItem('rag_signal_active_client_id');
+
+            setActiveClientId((currentId) => {
+              if (currentId && mergedList.some((c) => c.id === currentId)) {
+                return currentId;
+              }
+              const savedClient = mergedList.find((c) => c.id === savedId);
+              if (savedClient) return savedClient.id;
+              return mergedList[0]?.id || '';
+            });
+
+            return mergedList;
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load clients from DB:', e);
+    } finally {
+      setClientsLoaded(true);
+    }
   }, []);
+
+  const handleSelectClient = useCallback((client: Client) => {
+    setActiveClientId(client.id);
+    try {
+      localStorage.setItem('rag_signal_active_client_id', client.id);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    if (activeClientId) {
+      try {
+        localStorage.setItem('rag_signal_active_client_id', activeClientId);
+      } catch {}
+    }
+  }, [activeClientId]);
+
+  useEffect(() => {
+    loadClientsFromDb();
+  }, [loadClientsFromDb]);
 
   const saveClientToDb = (client: Client) => {
     fetch('/api/db/clients', {
@@ -96,28 +184,112 @@ export default function App() {
     }).catch((e) => console.error('Failed to save client to DB:', e));
   };
 
-  const [activeClientId, setActiveClientId] = useState<string>(() => {
-    try {
-      const savedId = localStorage.getItem('rag_signal_active_client_id');
-      if (savedId) return savedId;
-    } catch {}
-    return '';
-  });
+  const saveActionToDb = (action: ActionItem) => {
+    fetch('/api/db/actions', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(action),
+    }).catch((e) => console.error('Failed to save action to DB:', e));
+  };
+
+  const saveDiagnosticToDb = (diagnostic: Diagnostic) => {
+    fetch('/api/db/diagnostics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(diagnostic),
+    }).catch((e) => console.error('Failed to save diagnostic to DB:', e));
+  };
 
   // Active client object — undefined when the workspace has no clients yet.
   const activeClient = useMemo(() => {
-    return clients.find((c) => c.id === activeClientId) || clients[0];
+    return clients.find((c) => c.id === activeClientId) || clients[0] || DEMO_CLIENT;
   }, [clients, activeClientId]);
 
-  // First-run / empty-workspace routing: send the user straight into onboarding
-  // to create a real client instead of ever silently showing fabricated data.
-  // Gated on clientsLoaded so it doesn't flash onboarding while the DB fetch
-  // above is still in flight (clients starts at [] every load).
-  useEffect(() => {
-    if (clientsLoaded && clients.length === 0) {
-      setShowOnboardingModal(true);
+  // Primary Workspace Data States (Direct Cloud Database Hydration)
+  const [prompts, setPrompts] = useState<Prompt[]>([]);
+  const [runs, setRuns] = useState<Run[]>([]);
+  const [cycleAggregates, setCycleAggregates] = useState<CycleAggregate[]>([]);
+  const [actions, setActions] = useState<ActionItem[]>([]);
+  const [pageAnalyses, setPageAnalyses] = useState<PageAnalysis[]>([]);
+  const [diagnostics, setDiagnostics] = useState<Record<string, Diagnostic>>({});
+
+  // Unified forceRefresh function for live cloud state synchronization
+  const forceRefresh = useCallback(async () => {
+    await loadClientsFromDb();
+    if (!activeClient?.id) return;
+
+    try {
+      const [pRes, rRes, dRes, aRes] = await Promise.all([
+        fetch(`/api/db/prompts?clientId=${encodeURIComponent(activeClient.id)}`),
+        fetch(`/api/db/runs?clientId=${encodeURIComponent(activeClient.id)}`),
+        fetch(`/api/db/diagnostics?clientId=${encodeURIComponent(activeClient.id)}`),
+        fetch(`/api/db/actions?clientId=${encodeURIComponent(activeClient.id)}`),
+      ]);
+
+      if (pRes.ok) {
+        const data = await pRes.json();
+        if (Array.isArray(data) && data.length > 0) {
+          const cleaned = data.filter((p: Prompt) => p.id !== 'prompt-1' && !p.text.includes('Catering/atıştırmalık'));
+          setPrompts(cleaned);
+        } else {
+          setPrompts(activeClient.id === 'client-filmfolk' ? FILMFOLK_PROMPTS : DEMO_PROMPTS);
+        }
+      }
+
+      if (rRes.ok) {
+        const dbRuns = await rRes.json();
+        if (Array.isArray(dbRuns) && dbRuns.length > 0) {
+          const sortedRuns = dbRuns.sort((a, b) => new Date(b.runAt).getTime() - new Date(a.runAt).getTime());
+          setRuns(sortedRuns);
+          const cycleIds = Array.from(new Set(sortedRuns.map((r: Run) => r.cycleId))).filter(Boolean);
+          if (cycleIds.length > 0) {
+            const aggregates = cycleIds.map((cId) => computeCycleAggregate(cId, sortedRuns, activeClient));
+            setCycleAggregates(aggregates.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()));
+          } else {
+            setCycleAggregates([]);
+          }
+        } else {
+          setRuns([]);
+          setCycleAggregates([]);
+        }
+      }
+
+      if (dRes.ok) {
+        const dbDiags = await dRes.json();
+        if (Array.isArray(dbDiags) && dbDiags.length > 0) {
+          const next: Record<string, Diagnostic> = {};
+          dbDiags.forEach((d: Diagnostic) => {
+            if (d.promptId) next[d.promptId] = d;
+          });
+          setDiagnostics(next);
+        } else {
+          setDiagnostics({});
+        }
+      }
+
+      if (aRes.ok) {
+        const dbActions = await aRes.json();
+        if (Array.isArray(dbActions) && dbActions.length > 0) {
+          setActions(dbActions);
+        } else {
+          setActions([]);
+        }
+      }
+    } catch (e) {
+      console.warn('Failed forceRefresh from cloud database:', e);
     }
-  }, [clientsLoaded, clients.length]);
+  }, [loadClientsFromDb, activeClient?.id]);
+
+  // Hook for centralized sync (online event, tab focus, custom sync events)
+  const { isSyncing, isOnline, triggerRefresh } = useGlobalSync({
+    onRefresh: forceRefresh,
+  });
+
+  const [internalSyncing, setInternalSyncing] = useState(false);
+  const syncStatus = isSyncing || internalSyncing ? 'syncing' : !isOnline ? 'offline' : 'synced';
+  const setSyncStatus = (status: 'synced' | 'syncing' | 'offline') => {
+    setInternalSyncing(status === 'syncing');
+  };
 
   // Tab State — synced to the URL (see TAB_PATHS) so each tab is a real,
   // shareable, back/forward-navigable address instead of only in-memory state.
@@ -136,154 +308,18 @@ export default function App() {
     return () => window.removeEventListener('popstate', onPopState);
   }, []);
 
-  // Prompts are persisted in Neon (/api/db/prompts), scoped by clientId — loaded
-  // by the effect below whenever the active client changes. Runs, Cycles,
-  // Actions, and Diagnostics still use localStorage persistence.
-  const [prompts, setPrompts] = useState<Prompt[]>([]);
-
+  // Load client-scoped data on activeClient change
   useEffect(() => {
     if (!activeClient) {
       setPrompts([]);
+      setRuns([]);
+      setCycleAggregates([]);
+      setDiagnostics({});
+      setActions([]);
       return;
     }
-    fetch(`/api/db/prompts?clientId=${encodeURIComponent(activeClient.id)}`)
-      .then((res) => (res.ok ? res.json() : []))
-      .then((data) => {
-        if (Array.isArray(data)) setPrompts(data);
-      })
-      .catch((e) => console.error('Failed to load prompts from DB:', e));
+    forceRefresh();
   }, [activeClient?.id]);
-
-  const [runs, setRuns] = useState<Run[]>(() => {
-    try {
-      const saved = localStorage.getItem('rag_signal_runs');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error('Failed to parse saved runs:', e);
-    }
-    // No fabricated measurement runs — visibility data only comes from real run cycles.
-    return [];
-  });
-
-  const [cycleAggregates, setCycleAggregates] = useState<CycleAggregate[]>(() => {
-    try {
-      const saved = localStorage.getItem('rag_signal_cycles');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error('Failed to parse saved cycles:', e);
-    }
-    return [];
-  });
-
-  const [actions, setActions] = useState<ActionItem[]>(() => {
-    try {
-      const saved = localStorage.getItem('rag_signal_actions');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error('Failed to parse saved actions:', e);
-    }
-    return [];
-  });
-
-  const [pageAnalyses, setPageAnalyses] = useState<PageAnalysis[]>(() => {
-    try {
-      const saved = localStorage.getItem('rag_signal_page_analyses');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch (e) {
-      console.error('Failed to parse saved pageAnalyses:', e);
-    }
-    return [];
-  });
-
-  // Clients are saved to the DB individually at the point of mutation (see
-  // handleCompleteOnboarding, handleUpdateClient, etc.) rather than via a
-  // blanket effect — a DB upsert needs the specific changed record, not an
-  // "overwrite everything" call every time the array reference changes.
-  useEffect(() => {
-    try {
-      localStorage.setItem('rag_signal_active_client_id', activeClientId);
-    } catch (e) {
-      console.error('Failed to save activeClientId to localStorage:', e);
-    }
-  }, [activeClientId]);
-
-  // Batch-upsert prompts to the DB whenever the list changes (mirrors the old
-  // "save whole array" localStorage effect, just against /api/db instead). A
-  // save right after the load effect above just re-upserts the same rows —
-  // harmless, since it's an upsert, not an overwrite-and-delete.
-  useEffect(() => {
-    if (!activeClient || prompts.length === 0) return;
-    fetch('/api/db/prompts/batch', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompts }),
-    }).catch((e) => console.error('Failed to save prompts to DB:', e));
-  }, [prompts, activeClient]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('rag_signal_runs', JSON.stringify(runs));
-    } catch (e) {
-      console.error('Failed to save runs to localStorage:', e);
-    }
-  }, [runs]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('rag_signal_cycles', JSON.stringify(cycleAggregates));
-    } catch (e) {
-      console.error('Failed to save cycles to localStorage:', e);
-    }
-  }, [cycleAggregates]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('rag_signal_actions', JSON.stringify(actions));
-    } catch (e) {
-      console.error('Failed to save actions to localStorage:', e);
-    }
-  }, [actions]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('rag_signal_page_analyses', JSON.stringify(pageAnalyses));
-    } catch (e) {
-      console.error('Failed to save pageAnalyses to localStorage:', e);
-    }
-  }, [pageAnalyses]);
-  const [diagnostics, setDiagnostics] = useState<Record<string, Diagnostic>>(() => {
-    try {
-      const saved = localStorage.getItem('rag_signal_diagnostics');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === 'object') return parsed;
-      }
-    } catch (e) {
-      console.error('Failed to parse saved diagnostics:', e);
-    }
-    // No auto-seeded demo diagnostics — real diagnoses come from /api/diagnostics/generate.
-    return {};
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('rag_signal_diagnostics', JSON.stringify(diagnostics));
-    } catch (e) {
-      console.error('Failed to save diagnostics to localStorage:', e);
-    }
-  }, [diagnostics]);
 
   // Modals & Inspection State
   const [showRunModal, setShowRunModal] = useState(false);
@@ -299,7 +335,7 @@ export default function App() {
   const [isRetestingActionId, setIsRetestingActionId] = useState<string | null>(null);
 
   // Active Engine
-  const [activeEngine, setActiveEngine] = useState<EngineId>('perplexity-sonar');
+  const [activeEngine, setActiveEngine] = useState<EngineId>('gemini-grounded');
 
   // Filter items by active client. activeClient is undefined until a client
   // exists (see the empty-workspace guard below) — these memos run on every
@@ -316,8 +352,13 @@ export default function App() {
 
   const clientCycles = useMemo(() => {
     if (!activeClient) return [];
+    if (clientRuns.length > 0) {
+      const cycleIds = Array.from(new Set(clientRuns.map((r) => r.cycleId))).filter(Boolean);
+      const aggregates = cycleIds.map((cId) => computeCycleAggregate(cId, clientRuns, activeClient));
+      return aggregates.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+    }
     return cycleAggregates.filter((c) => c.clientId === activeClient.id);
-  }, [cycleAggregates, activeClient]);
+  }, [clientRuns, cycleAggregates, activeClient]);
 
   const latestCycle = useMemo(() => {
     if (clientCycles.length === 0) return null;
@@ -331,17 +372,39 @@ export default function App() {
     return actions.filter((a) => a.clientId === activeClient.id);
   }, [actions, activeClient]);
 
-  // Compute deterministic prompt aggregates from the latest cycle runs (or all client runs)
+  // Compute deterministic prompt aggregates from the latest cycle runs (or fallback to prompt's most recent runs)
   const promptAggregates = useMemo(() => {
-    const runsForAgg = latestCycle
-      ? clientRuns.filter((r) => r.cycleId === latestCycle.cycleId)
-      : clientRuns;
-
     return clientPrompts.map((prompt) => {
-      const pRuns = runsForAgg.filter((r) => r.promptId === prompt.id);
+      let pRuns = latestCycle
+        ? clientRuns.filter((r) => r.cycleId === latestCycle.cycleId && r.promptId === prompt.id)
+        : [];
+      if (pRuns.length === 0) {
+        const allPRuns = clientRuns.filter((r) => r.promptId === prompt.id);
+        if (allPRuns.length > 0) {
+          const latestPromptCycleId = allPRuns[0].cycleId;
+          pRuns = allPRuns.filter((r) => r.cycleId === latestPromptCycleId);
+        }
+      }
       return computePromptAggregate(prompt, pRuns, activeClient);
     });
   }, [clientPrompts, clientRuns, latestCycle, activeClient]);
+
+  // Show Loading Spinner during Auth initialization
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#090D16] flex flex-col items-center justify-center space-y-3">
+        <Loader2 className="w-8 h-8 text-[#D33A2C] animate-spin" />
+        <p className="text-xs font-semibold text-[#64748B] dark:text-[#94A3B8] tracking-wider uppercase">
+          Initializing RAG SIGNAL Authentication...
+        </p>
+      </div>
+    );
+  }
+
+  // Enforce Login Guard if user is not authenticated and has not chosen guest mode
+  if (!user && !guestMode) {
+    return <LoginPage onBypass={() => setGuestMode(true)} />;
+  }
 
   // Polls a background run-cycle job started via POST /api/runs/execute-cycle
   // until it finishes. Started as a background job (not one blocking request)
@@ -355,21 +418,37 @@ export default function App() {
     error?: string;
   }> => {
     return new Promise((resolve) => {
+      let retryCount = 0;
+      const maxRetries = 10;
+
       const poll = async () => {
         try {
           const res = await fetch(`/api/runs/execute-cycle/${jobId}/status`);
           if (!res.ok) {
+            // Retry on 404 (server restart / container boot), 429, or >= 500 up to maxRetries
+            if (retryCount < maxRetries) {
+              retryCount++;
+              const delay = Math.min(1500 * Math.pow(1.3, retryCount), 6000);
+              setTimeout(poll, delay);
+              return;
+            }
             resolve({ status: 'failed', runs: [], runCycle: null, error: `Lost track of the running job (HTTP ${res.status}).` });
             return;
           }
+          retryCount = 0; // Reset consecutive error count on successful response
           const data = await res.json();
           setRunProgress({ completed: data.completed, total: data.total });
           if (data.status === 'running') {
-            setTimeout(poll, 1500);
+            setTimeout(poll, 2000);
           } else {
             resolve(data);
           }
         } catch (err: any) {
+          if (retryCount < maxRetries) {
+            retryCount++;
+            setTimeout(poll, 2500);
+            return;
+          }
           resolve({ status: 'failed', runs: [], runCycle: null, error: err?.message || 'Lost connection while polling job status.' });
         }
       };
@@ -384,12 +463,9 @@ export default function App() {
     engine: EngineId;
   }) => {
     setIsExecutingCycle(true);
+    setSyncStatus('syncing');
     setRunProgress(null);
-    setRunProgressStatus(
-      config.engine === 'perplexity-sonar'
-        ? 'Initializing Perplexity Agent Grounded Search & Gemini JSON Extraction...'
-        : 'Initializing Google Search Grounding & Gemini JSON Extraction...'
-    );
+    setRunProgressStatus('Initializing Google Search Grounding & Gemini JSON Extraction...');
 
     try {
       const targetPrompts = clientPrompts.filter((p) => config.promptIds.includes(p.id));
@@ -411,21 +487,28 @@ export default function App() {
       }
 
       const { jobId, total } = await response.json();
+      localStorage.setItem('rag_signal_active_job_id', jobId);
+      localStorage.setItem('rag_signal_active_job_client_id', activeClient.id);
       setRunProgress({ completed: 0, total });
       const result = await pollExecutionJob(jobId);
 
-      // Save whatever runs completed even on failure — a cycle that dies at
-      // run 22/30 shouldn't discard the 22 real measurements it already made.
-      if (result.runs.length > 0) {
+      // Save whatever runs completed even on partial failure — a cycle that dies at
+      // run 14/15 shouldn't discard the 14 real measurements it already made.
+      if (result.runs && result.runs.length > 0) {
         setRuns((prev) => [...result.runs, ...prev]);
+
+        const cycleId = result.runCycle?.id || result.runs[0]?.cycleId || `cycle-${Date.now()}`;
+        const newCycle: CycleAggregate = computeCycleAggregate(cycleId, result.runs, activeClient);
+        setCycleAggregates((prev) => [newCycle, ...prev]);
       }
 
       if (result.status === 'failed') {
-        throw new Error(result.error || 'Run cycle failed partway through.');
+        if (result.runs && result.runs.length > 0) {
+          alert(`Run cycle partially completed (${result.runs.length} runs saved): ${result.error || 'Server restarted mid-cycle.'}`);
+        } else {
+          throw new Error(result.error || 'Run cycle failed partway through.');
+        }
       }
-
-      const newCycle: CycleAggregate = computeCycleAggregate(result.runCycle!.id, result.runs, activeClient);
-      setCycleAggregates((prev) => [newCycle, ...prev]);
 
       // If client was demo and we ran a live cycle, update timestamp
       if (activeClient.isDemo) {
@@ -441,27 +524,27 @@ export default function App() {
       console.error('Run cycle failed:', err);
       alert(`Measurement cycle failed: ${err.message || 'Check server connection'}`);
     } finally {
+      localStorage.removeItem('rag_signal_active_job_id');
+      localStorage.removeItem('rag_signal_active_job_client_id');
       setIsExecutingCycle(false);
       setRunProgressStatus('');
       setRunProgress(null);
+      setSyncStatus('synced');
     }
   };
 
   // Run 6-Dimension Diagnostic (Connects to backend /api/diagnostics/generate)
   const handleDiagnosePrompt = async (prompt: Prompt) => {
     const pRuns = clientRuns.filter((r) => r.promptId === prompt.id);
-    // The diagnostic is evidence-backed by design — it needs at least one real
-    // measurement run to synthesize from, and correctly refuses to fabricate one.
-    // Failing that silently (previously: console.error only, no user feedback)
-    // just looked like a broken button, so check and explain upfront instead of
-    // round-tripping to the server for a 400.
+    setDiagnosingPrompt(prompt);
+
     if (pRuns.length === 0) {
-      alert('This prompt has no measurement runs yet. Run a measurement cycle (Overview → Run Cycle) for it first, then diagnose.');
+      // DiagnosticModal will render "Insufficient Measurement Variance" box with Run Cycle trigger
       return;
     }
 
-    setDiagnosingPrompt(prompt);
     setIsDiagnosing(true);
+    setSyncStatus('syncing');
 
     try {
       const response = await fetch('/api/diagnostics/generate', {
@@ -479,18 +562,20 @@ export default function App() {
         throw new Error(errBody?.error || 'Diagnostic service failed');
       }
       const data = await response.json();
-
-      if (data.diagnostic) {
+      const diagObj = data.diagnostic || data;
+      if (diagObj) {
         setDiagnostics((prev) => ({
           ...prev,
-          [prompt.id]: data.diagnostic,
+          [prompt.id]: diagObj,
         }));
+        saveDiagnosticToDb(diagObj);
       }
     } catch (err: any) {
       console.error('Diagnosis failed:', err);
       alert(`Diagnosis failed: ${err.message || 'Unknown error'}`);
     } finally {
       setIsDiagnosing(false);
+      setSyncStatus('synced');
     }
   };
 
@@ -570,18 +655,21 @@ export default function App() {
           : null;
 
       setActions((prev) =>
-        prev.map((a) =>
-          a.id === action.id
-            ? {
-                ...a,
-                status: 'Retested',
-                retestDate: new Date().toISOString(),
-                retestMentionRate,
-                retestCitationRate,
-                retestPosition,
-              }
-            : a
-        )
+        prev.map((a) => {
+          if (a.id === action.id) {
+            const updated: ActionItem = {
+              ...a,
+              status: 'Retested',
+              retestDate: new Date().toISOString(),
+              retestMentionRate,
+              retestCitationRate,
+              retestPosition,
+            };
+            saveActionToDb(updated);
+            return updated;
+          }
+          return a;
+        })
       );
     } catch (err: any) {
       console.error('Retest error:', err);
@@ -599,6 +687,11 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
     setPrompts((prev) => [...prev, newPrompt]);
+    fetch('/api/db/prompts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(newPrompt),
+    }).catch((e) => console.warn('Failed to save prompt to DB:', e));
   };
 
   // Bulk add prompts
@@ -609,29 +702,54 @@ export default function App() {
       createdAt: new Date().toISOString(),
     }));
     setPrompts((prev) => [...prev, ...newPrompts]);
+    fetch('/api/db/prompts/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompts: newPrompts }),
+    }).catch((e) => console.warn('Failed to save batch prompts to DB:', e));
   };
 
   // Toggle prompt active status
   const handleTogglePromptActive = (promptId: string) => {
     setPrompts((prev) =>
-      prev.map((p) => (p.id === promptId ? { ...p, active: !p.active } : p))
+      prev.map((p) => {
+        if (p.id === promptId) {
+          const updated = { ...p, active: !p.active };
+          fetch('/api/db/prompts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updated),
+          }).catch((e) => console.warn('Failed to update prompt in DB:', e));
+          return updated;
+        }
+        return p;
+      })
     );
   };
 
   // Delete prompt
   const handleDeletePrompt = (promptId: string) => {
     setPrompts((prev) => prev.filter((p) => p.id !== promptId));
-    // The prompts batch-save effect only upserts — it never deletes rows that
-    // drop out of the array, so the DB row needs an explicit delete call too.
     fetch(`/api/db/prompts/${promptId}`, { method: 'DELETE' }).catch((e) =>
-      console.error('Failed to delete prompt from DB:', e)
+      console.warn('Failed to delete prompt from DB:', e)
     );
   };
 
   // Update prompt fields (for inline title editing)
   const handleUpdatePrompt = (promptId: string, updatedFields: Partial<Prompt>) => {
     setPrompts((prev) =>
-      prev.map((p) => (p.id === promptId ? { ...p, ...updatedFields } : p))
+      prev.map((p) => {
+        if (p.id === promptId) {
+          const updated = { ...p, ...updatedFields };
+          fetch('/api/db/prompts', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updated),
+          }).catch((e) => console.warn('Failed to update prompt in DB:', e));
+          return updated;
+        }
+        return p;
+      })
     );
   };
 
@@ -641,12 +759,7 @@ export default function App() {
   };
 
   const handleCompleteOnboarding = async (newClient: Client, autoGeneratePrompts: boolean) => {
-    setClients((prev) => [...prev, newClient]);
-    setActiveClientId(newClient.id);
-    setShowOnboardingModal(false);
-    saveClientToDb(newClient);
-
-    // If requested, auto-discover initial seed prompts for this brand & market
+    let seedPrompts: Prompt[] = [];
     if (autoGeneratePrompts) {
       try {
         const res = await fetch('/api/prompts/discover', {
@@ -663,7 +776,7 @@ export default function App() {
         if (res.ok) {
           const data = await res.json();
           if (Array.isArray(data.prompts) && data.prompts.length > 0) {
-            const seedPrompts: Prompt[] = data.prompts.map((p: any, idx: number) => ({
+            seedPrompts = data.prompts.map((p: any, idx: number) => ({
               id: `p-discovered-${Date.now()}-${idx}`,
               ownerId: 'default-owner',
               clientId: newClient.id,
@@ -673,46 +786,116 @@ export default function App() {
               active: true,
               createdAt: new Date().toISOString(),
             }));
-            setPrompts((prev) => [...seedPrompts, ...prev]);
           }
         }
       } catch (err) {
         console.warn('Failed to auto-discover seed prompts during onboarding:', err);
       }
     }
+
+    // Atomic transaction for brand profile, language settings, & initial prompts via batch-sync endpoint
+    try {
+      await fetch('/api/db/batch-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client: newClient,
+          prompts: seedPrompts,
+        }),
+      });
+    } catch (e) {
+      console.error('Failed atomic batch sync on onboarding:', e);
+    }
+
+    setClients((prev) => {
+      const normNew = (newClient.domain || '').toLowerCase().trim().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+      const filtered = prev.filter((c) => {
+        const norm = (c.domain || '').toLowerCase().trim().replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '');
+        return c.id !== newClient.id && norm !== normNew;
+      });
+      return [...filtered, newClient];
+    });
+    setActiveClientId(newClient.id);
+    localStorage.setItem('rag_signal_active_client_id', newClient.id);
+    localStorage.setItem('rag_signal_demo_cleared', 'true');
+    if (seedPrompts.length > 0) {
+      setPrompts((prev) => [...seedPrompts, ...prev]);
+    }
+    setShowOnboardingModal(false);
   };
 
-  // Update client
+  // Delete client brand workspace
+  const handleDeleteClient = async (clientId: string) => {
+    try {
+      const deletedIds = getDeletedClientIds();
+      if (!deletedIds.includes(clientId)) {
+        deletedIds.push(clientId);
+        localStorage.setItem('rag_signal_deleted_client_ids', JSON.stringify(deletedIds));
+      }
+    } catch {}
+
+    try {
+      await fetch(`/api/db/clients/${clientId}`, { method: 'DELETE' });
+    } catch (e) {
+      console.error('Failed to delete client from DB:', e);
+    }
+
+    setClients((prev) => {
+      const remaining = prev.filter((c) => c.id !== clientId);
+      if (activeClientId === clientId) {
+        if (remaining.length > 0) {
+          setActiveClientId(remaining[0].id);
+          localStorage.setItem('rag_signal_active_client_id', remaining[0].id);
+        } else {
+          setActiveClientId('');
+          localStorage.removeItem('rag_signal_active_client_id');
+          setShowOnboardingModal(true);
+        }
+      }
+      return remaining;
+    });
+  };
+
+  // Update client atomically via batch-sync endpoint
   const handleUpdateClient = (updated: Partial<Client>) => {
     const updatedClient = { ...activeClient, ...updated };
     setClients((prev) =>
       prev.map((c) => (c.id === activeClient.id ? updatedClient : c))
     );
-    saveClientToDb(updatedClient);
+    fetch('/api/db/batch-sync', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ client: updatedClient }),
+    }).catch((e) => console.error('Failed batch sync client update:', e));
   };
 
   // Reset Demo Data
   // Clear Mockup Data & Setup Real Client Workspace
   const clearDemoWorkspace = () => {
+    localStorage.setItem('rag_signal_demo_cleared', 'true');
     localStorage.removeItem('rag_signal_clients');
     localStorage.removeItem('rag_signal_active_client_id');
-    localStorage.removeItem('rag_signal_prompts');
-    localStorage.removeItem('rag_signal_runs');
-    localStorage.removeItem('rag_signal_cycles');
-    localStorage.removeItem('rag_signal_actions');
-    localStorage.removeItem('rag_signal_page_analyses');
-    localStorage.removeItem('rag_signal_diagnostics');
 
-    setClients([]);
-    setActiveClientId('');
-    setPrompts([]);
-    setRuns([]);
-    setCycleAggregates([]);
-    setActions([]);
-    setPageAnalyses([]);
-    setDiagnostics({});
+    // Delete demo benchmark client on backend DB
+    fetch('/api/db/clients/client-snacksforparty', { method: 'DELETE' }).catch(() => {});
 
-    setShowOnboardingModal(true);
+    // Retain existing real (non-demo) clients if any
+    const realClients = clients.filter((c) => !c.isDemo && c.id !== 'client-snacksforparty');
+    setClients(realClients);
+
+    if (realClients.length > 0) {
+      setActiveClientId(realClients[0].id);
+      localStorage.setItem('rag_signal_active_client_id', realClients[0].id);
+    } else {
+      setActiveClientId('');
+      setPrompts([]);
+      setRuns([]);
+      setCycleAggregates([]);
+      setActions([]);
+      setPageAnalyses([]);
+      setDiagnostics({});
+      setShowOnboardingModal(true);
+    }
   };
 
   const handleClearDemoDataAndStartReal = () => {
@@ -782,14 +965,18 @@ export default function App() {
       <Navbar
         clients={clients}
         activeClient={activeClient}
-        onSelectClient={(c) => setActiveClientId(c.id)}
+        onSelectClient={handleSelectClient}
         onNewClient={handleNewClient}
+        onDeleteClient={handleDeleteClient}
         activeTab={activeTab}
         onSelectTab={navigateTab}
         onOpenRunModal={() => setShowRunModal(true)}
         activeEngine={activeEngine}
         darkMode={darkMode}
         onToggleDarkMode={toggleDarkMode}
+        onManualSync={triggerRefresh}
+        isSyncing={isSyncing}
+        isOnline={isOnline}
       />
 
       {/* Main Workspace Area with Sleek Header */}
@@ -805,6 +992,45 @@ export default function App() {
                 DEMO DATA
               </span>
             )}
+            <div className="bg-[#E5E7EB] dark:bg-[#334155] h-4 w-[1px] mx-1 sm:mx-2 hidden sm:block" />
+            
+            {/* Visual Sync Status Indicator */}
+            <div
+              className={`flex items-center gap-1.5 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded border transition-all shrink-0 ${
+                syncStatus === 'synced'
+                  ? 'bg-[#ECFDF5] dark:bg-[#064E3B]/40 text-[#065F46] dark:text-[#A7F3D0] border-[#A7F3D0] dark:border-[#065F46]'
+                  : syncStatus === 'syncing'
+                  ? 'bg-[#EEF2FF] dark:bg-[#312E81]/40 text-[#4338CA] dark:text-[#C7D2FE] border-[#C7D2FE] dark:border-[#4338CA]'
+                  : 'bg-[#FEF2F2] dark:bg-[#7F1D1D]/40 text-[#991B1B] dark:text-[#FCA5A5] border-[#FCA5A5] dark:border-[#7F1D1D]'
+              }`}
+              title={
+                syncStatus === 'synced'
+                  ? 'Fully synchronized with Firebase & Cloud SQL'
+                  : syncStatus === 'syncing'
+                  ? 'Active write / run cycle in progress'
+                  : 'Offline mode — local cache active'
+              }
+            >
+              {syncStatus === 'synced' && (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse" />
+                  <span>Cloud Synced</span>
+                </>
+              )}
+              {syncStatus === 'syncing' && (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full border border-[#4338CA] dark:border-[#818CF8] border-t-transparent animate-spin" />
+                  <span>Syncing...</span>
+                </>
+              )}
+              {syncStatus === 'offline' && (
+                <>
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#EF4444]" />
+                  <span>Offline</span>
+                </>
+              )}
+            </div>
+
             <div className="bg-[#E5E7EB] dark:bg-[#334155] h-4 w-[1px] mx-1 sm:mx-2 hidden sm:block" />
             <div className="text-xs font-mono bg-[#F3F4F6] dark:bg-[#1E293B] px-2 py-1 border border-[#D1D5DB] dark:border-[#334155] text-[#4B5563] dark:text-[#94A3B8] hidden sm:block shrink-0 rounded">
               n={activeClient.defaultRunsPerPrompt || 3} runs/prompt
@@ -840,6 +1066,7 @@ export default function App() {
               latestCycle={latestCycle}
               actions={clientActions}
               prompts={clientPrompts}
+              runs={clientRuns}
               onInspectPrompt={(id) => setInspectingPromptId(id)}
               onOpenRunModal={() => setShowRunModal(true)}
               onNavigateTab={navigateTab}
@@ -852,6 +1079,7 @@ export default function App() {
               prompts={clientPrompts}
               promptAggregates={promptAggregates}
               client={activeClient}
+              runs={clientRuns}
               onAddPrompt={handleAddPrompt}
               onBulkAddPrompts={handleBulkAddPrompts}
               onToggleActive={handleTogglePromptActive}
@@ -868,6 +1096,7 @@ export default function App() {
               client={activeClient}
               promptAggregates={promptAggregates}
               latestCycle={latestCycle}
+              cycles={clientCycles}
               prompts={clientPrompts}
               runs={clientRuns}
               onDiagnosePrompt={handleDiagnosePrompt}
@@ -879,6 +1108,7 @@ export default function App() {
             <PagesTab
               client={activeClient}
               savedAnalyses={pageAnalyses}
+              runs={clientRuns}
               onAnalyzePage={handleAnalyzePage}
               onSaveActionFromPage={(rec) => {
                 const newAct: ActionItem = {
@@ -900,8 +1130,24 @@ export default function App() {
                   createdAt: new Date().toISOString(),
                 };
                 setActions((prev) => [newAct, ...prev]);
+                saveActionToDb(newAct);
                 navigateTab('Actions');
               }}
+            />
+          )}
+
+          {activeTab === 'BrandMemory' && <BrandMemoryTab client={activeClient} />}
+
+          {activeTab === 'AeoStudio' && <AeoStudioTab client={activeClient} />}
+
+          {activeTab === 'MarketTrends' && (
+            <MarketTrendsTab
+              client={activeClient}
+              cycleAggregates={clientCycles}
+              prompts={clientPrompts}
+              runs={clientRuns}
+              onOpenRunModal={() => setShowRunModal(true)}
+              onInspectPrompt={(id) => setInspectingPromptId(id)}
             />
           )}
 
@@ -914,7 +1160,14 @@ export default function App() {
               prompts={clientPrompts}
               onUpdateActionStatus={(id, status) => {
                 setActions((prev) =>
-                  prev.map((a) => (a.id === id ? { ...a, status } : a))
+                  prev.map((a) => {
+                    if (a.id === id) {
+                      const updated = { ...a, status };
+                      saveActionToDb(updated);
+                      return updated;
+                    }
+                    return a;
+                  })
                 );
               }}
               onRetestAction={handleRetestAction}
@@ -925,6 +1178,7 @@ export default function App() {
                   createdAt: new Date().toISOString(),
                 };
                 setActions((prev) => [newAct, ...prev]);
+                saveActionToDb(newAct);
               }}
               isRetestingActionId={isRetestingActionId}
             />
@@ -933,7 +1187,9 @@ export default function App() {
           {activeTab === 'Settings' && (
             <SettingsTab
               client={activeClient}
+              prompts={prompts}
               onUpdateClient={handleUpdateClient}
+              onDeleteClient={handleDeleteClient}
               onClearDemoData={handleClearDemoDataAndStartReal}
               exportDataJson={handleExportJson}
             />
@@ -961,7 +1217,7 @@ export default function App() {
       {isExecutingCycle && !showRunModal && (
         <button
           onClick={() => setShowRunModal(true)}
-          className="fixed bottom-4 right-4 z-40 bg-[#111827] dark:bg-[#4338CA] text-white px-4 py-2.5 rounded-full shadow-lg text-xs font-bold uppercase tracking-wider flex items-center gap-2 hover:bg-black dark:hover:bg-[#3730A3] transition-colors"
+          className="fixed bottom-16 md:bottom-4 right-3 md:right-4 z-40 bg-[#111827] dark:bg-[#4338CA] text-white px-3.5 sm:px-4 py-2 sm:py-2.5 rounded-full shadow-lg text-[11px] sm:text-xs font-bold uppercase tracking-wider flex items-center gap-2 hover:bg-black dark:hover:bg-[#3730A3] transition-colors"
         >
           <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
           Run Cycle: {runProgress ? `${runProgress.completed}/${runProgress.total}` : 'starting...'}
@@ -985,10 +1241,16 @@ export default function App() {
           prompt={diagnosingPrompt}
           diagnostic={diagnostics[diagnosingPrompt.id] || null}
           client={activeClient}
+          runs={clientRuns}
           isLoading={isDiagnosing}
           onGenerate={() => handleDiagnosePrompt(diagnosingPrompt)}
+          onOpenRunModal={() => {
+            setDiagnosingPrompt(null);
+            setShowRunModal(true);
+          }}
           onSaveAction={(action) => {
             setActions((prev) => [action, ...prev]);
+            saveActionToDb(action);
           }}
           onClose={() => setDiagnosingPrompt(null)}
         />
@@ -1016,7 +1278,10 @@ export default function App() {
         <ReportModal
           client={activeClient}
           cycleAggregate={latestCycle}
+          cycleAggregates={clientCycles}
           promptAggregates={promptAggregates}
+          prompts={clientPrompts}
+          runs={clientRuns}
           actions={clientActions}
           diagnostics={Object.values(diagnostics)}
           onClose={() => setShowReportModal(false)}

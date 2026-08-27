@@ -9,9 +9,10 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  ReferenceLine,
 } from 'recharts';
 import { CycleAggregate, Client } from '../../types';
-import { Table, BarChart2, TrendingUp, ArrowUpRight, ArrowDownRight, Minus, Activity } from 'lucide-react';
+import { Table, BarChart2, TrendingUp, ArrowUpRight, ArrowDownRight, Minus, Activity, ShieldCheck, CheckCircle2 } from 'lucide-react';
 
 interface PerformanceTrendsChartProps {
   cycles: CycleAggregate[];
@@ -34,7 +35,11 @@ export function PerformanceTrendsChart({
   if (sortedCycles.length === 0) {
     return (
       <div className="bg-white dark:bg-[#0F172A] border border-[#E5E7EB] dark:border-[#1E293B] p-6 text-center text-[#6B7280] dark:text-[#94A3B8] text-xs">
-        No completed run cycles available to compute performance trends.
+        <Activity className="w-8 h-8 mx-auto text-[#9CA3AF] dark:text-[#64748B] mb-2 opacity-50" />
+        <p className="font-semibold text-[#111827] dark:text-[#F8FAFC]">No Completed Run Cycles Yet</p>
+        <p className="text-[11px] mt-1 text-[#6B7280] dark:text-[#94A3B8]">
+          Execute a grounded run cycle to record aggregate mention rate trajectories across execution cycles.
+        </p>
       </div>
     );
   }
@@ -44,6 +49,9 @@ export function PerformanceTrendsChart({
     const dateObj = new Date(cycle.startedAt);
     const formattedDate = isNaN(dateObj.getTime())
       ? `Cycle ${idx + 1}`
+      : dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const shortDate = isNaN(dateObj.getTime())
+      ? `C${idx + 1}`
       : dateObj.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 
     const mentionRatePct = Math.round((cycle.overallMentionRate ?? 0) * 100);
@@ -52,7 +60,9 @@ export function PerformanceTrendsChart({
 
     return {
       cycleId: cycle.cycleId,
-      dateLabel: formattedDate,
+      cycleIndex: idx + 1,
+      dateLabel: shortDate,
+      fullFormattedDate: formattedDate,
       fullDate: cycle.startedAt,
       mentionRate: mentionRatePct,
       citationRate: citationRatePct,
@@ -68,34 +78,40 @@ export function PerformanceTrendsChart({
   const mentionDiff = latestPoint ? latestPoint.mentionRate - (firstPoint?.mentionRate ?? 0) : 0;
   const citationDiff = latestPoint ? latestPoint.citationRate - (firstPoint?.citationRate ?? 0) : 0;
 
+  // Average mention rate over the 5 cycles
+  const avgMentionRate = Math.round(
+    chartData.reduce((acc, c) => acc + c.mentionRate, 0) / chartData.length
+  );
+
   // Custom Recharts Tooltip
   const CustomTooltip = ({ active, payload, label }: any) => {
     if (active && payload && payload.length) {
       const data = payload[0].payload;
       return (
-        <div className="bg-[#111827] text-white p-3 text-xs border border-[#374151] rounded shadow-xl font-sans space-y-1.5 z-50">
-          <div className="font-bold text-xs border-b border-[#374151] pb-1 flex items-center justify-between gap-4">
-            <span>{label}</span>
+        <div className="bg-[#111827] text-white p-3.5 text-xs border border-[#374151] rounded shadow-xl font-sans space-y-2 z-50 min-w-[220px]">
+          <div className="font-bold text-xs border-b border-[#374151] pb-1.5 flex items-center justify-between gap-4">
+            <span className="text-[#F8FAFC]">Cycle #{data.cycleIndex} ({data.fullFormattedDate})</span>
             <span className="font-mono text-[10px] text-[#9CA3AF]">n={data.totalRuns} runs</span>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-1.5">
             <div className="flex items-center justify-between gap-4">
               <span className="flex items-center gap-1.5 font-medium text-[#A5B4FC]">
                 <span className="w-2 h-2 rounded-full bg-[#6366F1]" />
-                Brand Mention Rate:
+                Aggregate Mention Rate:
               </span>
-              <span className="font-mono font-bold text-white">{data.mentionRate}%</span>
+              <span className="font-mono font-bold text-white text-sm">{data.mentionRate}%</span>
             </div>
             <div className="flex items-center justify-between gap-4">
               <span className="flex items-center gap-1.5 font-medium text-[#6EE7B7]">
                 <span className="w-2 h-2 rounded-full bg-[#10B981]" />
                 Domain Citation Rate:
               </span>
-              <span className="font-mono font-bold text-white">{data.citationRate}%</span>
+              <span className="font-mono font-bold text-white text-sm">{data.citationRate}%</span>
             </div>
           </div>
-          <div className="text-[10px] text-[#9CA3AF] pt-1 border-t border-[#374151]/50 font-mono">
-            Mentions: {data.mentionCount}/{data.totalRuns} • Citations: {data.citationCount}/{data.totalRuns}
+          <div className="text-[10px] text-[#9CA3AF] pt-1.5 border-t border-[#374151]/50 font-mono flex items-center justify-between">
+            <span>Mentions: {data.mentionCount}/{data.totalRuns}</span>
+            <span>Citations: {data.citationCount}/{data.totalRuns}</span>
           </div>
         </div>
       );
@@ -112,40 +128,32 @@ export function PerformanceTrendsChart({
             <div className="flex items-center gap-1.5 text-[#4338CA] dark:text-[#818CF8]">
               <Activity className="w-4 h-4" />
               <h3 className="text-xs font-bold uppercase tracking-widest text-[#111827] dark:text-[#F8FAFC]">
-                Performance Trends (Last {chartData.length} Cycles)
+                Aggregate Mention Rate vs Time (Last {chartData.length} Cycles)
               </h3>
             </div>
             <span className="text-[10px] text-[#4B5563] dark:text-[#94A3B8] bg-[#F3F4F6] dark:bg-[#1E293B] border border-[#E5E7EB] dark:border-[#334155] px-2 py-0.5 font-mono">
-              Recharts Analysis • n={chartData.reduce((acc, c) => acc + c.totalRuns, 0)} total runs
+              Platform Trajectory • n={chartData.reduce((acc, c) => acc + c.totalRuns, 0)} total grounded runs
             </span>
 
             {/* Trajectory Badges */}
-            {mentionDiff > 0 ? (
-              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#4338CA] dark:text-[#A5B4FC] border border-[#C7D2FE] dark:border-[#3730A3] px-1.5 py-0.5">
-                <ArrowUpRight className="w-2.5 h-2.5" /> Mentions +{mentionDiff}%
-              </span>
-            ) : mentionDiff < 0 ? (
-              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase bg-[#FEF2F2] dark:bg-[#7F1D1D]/30 text-[#991B1B] dark:text-[#FCA5A5] border border-[#FECACA] dark:border-[#991B1B] px-1.5 py-0.5">
-                <ArrowDownRight className="w-2.5 h-2.5" /> Mentions {mentionDiff}%
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase bg-[#F3F4F6] dark:bg-[#1E293B] text-[#6B7280] dark:text-[#94A3B8] border border-[#E5E7EB] dark:border-[#334155] px-1.5 py-0.5">
-                <Minus className="w-2.5 h-2.5" /> Mentions Stable
-              </span>
-            )}
-
-            {citationDiff > 0 ? (
-              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase bg-[#ECFDF5] dark:bg-[#064E3B]/40 text-[#065F46] dark:text-[#6EE7B7] border border-[#A7F3D0] dark:border-[#047857] px-1.5 py-0.5">
-                <ArrowUpRight className="w-2.5 h-2.5" /> Citations +{citationDiff}%
-              </span>
-            ) : citationDiff < 0 ? (
-              <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase bg-[#FEF2F2] dark:bg-[#7F1D1D]/30 text-[#991B1B] dark:text-[#FCA5A5] border border-[#FECACA] dark:border-[#991B1B] px-1.5 py-0.5">
-                <ArrowDownRight className="w-2.5 h-2.5" /> Citations {citationDiff}%
-              </span>
+            {chartData.length > 1 ? (
+              mentionDiff > 0 ? (
+                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#4338CA] dark:text-[#A5B4FC] border border-[#C7D2FE] dark:border-[#3730A3] px-1.5 py-0.5">
+                  <ArrowUpRight className="w-2.5 h-2.5" /> Net Mention Shift +{mentionDiff}%
+                </span>
+              ) : mentionDiff < 0 ? (
+                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase bg-[#FEF2F2] dark:bg-[#7F1D1D]/30 text-[#991B1B] dark:text-[#FCA5A5] border border-[#FECACA] dark:border-[#991B1B] px-1.5 py-0.5">
+                  <ArrowDownRight className="w-2.5 h-2.5" /> Net Mention Shift {mentionDiff}%
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-0.5 text-[9px] font-bold uppercase bg-[#F3F4F6] dark:bg-[#1E293B] text-[#6B7280] dark:text-[#94A3B8] border border-[#E5E7EB] dark:border-[#334155] px-1.5 py-0.5">
+                  <Minus className="w-2.5 h-2.5" /> Stable Trajectory
+                </span>
+              )
             ) : null}
           </div>
           <p className="text-xs text-[#6B7280] dark:text-[#94A3B8] mt-1">
-            Tracking long-term AI visibility trajectories across grounded responses and publisher citations for <strong>{client.brandName}</strong> ({client.domain}).
+            Tracking historical aggregate brand presence over time across all prompt runs for <strong>{client.brandName}</strong> ({client.domain}).
           </p>
         </div>
 
@@ -155,7 +163,7 @@ export function PerformanceTrendsChart({
           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-[#111827] dark:text-[#F8FAFC] bg-white dark:bg-[#0F172A] hover:bg-[#F3F4F6] dark:hover:bg-[#1E293B] border border-[#D1D5DB] dark:border-[#334155] rounded shadow-xs transition-colors shrink-0"
         >
           {showTable ? <BarChart2 className="w-3.5 h-3.5" /> : <Table className="w-3.5 h-3.5" />}
-          {showTable ? 'Chart View' : 'Table Fallback'}
+          {showTable ? 'Recharts View' : 'Table Fallback'}
         </button>
       </div>
 
@@ -166,19 +174,19 @@ export function PerformanceTrendsChart({
             <thead>
               <tr className="border-b border-[#E5E7EB] dark:border-[#1E293B] bg-[#F9FAFB] dark:bg-[#1E293B]">
                 <th className="py-2.5 px-3 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8]">
-                  Run Cycle
+                  Execution Cycle / Timestamp
                 </th>
-                <th className="py-2.5 px-3 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8]">
+                <th className="py-2.5 px-3 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8] text-center">
                   Sample Size (n)
                 </th>
-                <th className="py-2.5 px-3 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8]">
-                  Brand Mention Rate
+                <th className="py-2.5 px-3 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8] text-center">
+                  Aggregate Mention Rate
                 </th>
-                <th className="py-2.5 px-3 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8]">
+                <th className="py-2.5 px-3 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8] text-center">
                   Domain Citation Rate
                 </th>
-                <th className="py-2.5 px-3 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8]">
-                  Status
+                <th className="py-2.5 px-3 font-bold text-[10px] uppercase tracking-wider text-[#6B7280] dark:text-[#94A3B8] text-center">
+                  Cycle Stage
                 </th>
               </tr>
             </thead>
@@ -186,28 +194,28 @@ export function PerformanceTrendsChart({
               {chartData.map((dp, i) => (
                 <tr key={dp.cycleId} className="hover:bg-[#F9FAFB] dark:hover:bg-[#1E293B]">
                   <td className="py-2.5 px-3 font-semibold text-[#111827] dark:text-[#F8FAFC]">
-                    {dp.dateLabel}
+                    Cycle #{dp.cycleIndex} — <span className="font-normal text-[#6B7280] dark:text-[#94A3B8]">{dp.fullFormattedDate}</span>
                   </td>
-                  <td className="py-2.5 px-3 text-[#6B7280] dark:text-[#94A3B8] font-mono">
+                  <td className="py-2.5 px-3 text-[#6B7280] dark:text-[#94A3B8] font-mono text-center">
                     n={dp.totalRuns} runs
                   </td>
-                  <td className="py-2.5 px-3 font-mono font-bold text-[#4338CA] dark:text-[#818CF8]">
+                  <td className="py-2.5 px-3 font-mono font-bold text-[#4338CA] dark:text-[#818CF8] text-center">
                     {dp.mentionRate}% ({dp.mentionCount}/{dp.totalRuns})
                   </td>
-                  <td className="py-2.5 px-3 font-mono font-bold text-[#059669] dark:text-[#34D399]">
+                  <td className="py-2.5 px-3 font-mono font-bold text-[#059669] dark:text-[#34D399] text-center">
                     {dp.citationRate}% ({dp.citationCount}/{dp.totalRuns})
                   </td>
-                  <td className="py-2.5 px-3">
+                  <td className="py-2.5 px-3 text-center">
                     {i === chartData.length - 1 ? (
                       <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-[#EEF2FF] dark:bg-[#1E1B4B] text-[#4338CA] dark:text-[#A5B4FC] border border-[#C7D2FE] dark:border-[#3730A3]">
-                        Latest Cycle
+                        Current Latest
                       </span>
                     ) : i === 0 ? (
                       <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-[#F3F4F6] dark:bg-[#1E293B] text-[#6B7280] dark:text-[#94A3B8] border border-[#E5E7EB] dark:border-[#334155]">
-                        Baseline Cycle
+                        Initial Baseline
                       </span>
                     ) : (
-                      <span className="text-[10px] text-[#9CA3AF] dark:text-[#64748B]">Historical</span>
+                      <span className="text-[10px] text-[#9CA3AF] dark:text-[#64748B] font-mono">Cycle #{dp.cycleIndex}</span>
                     )}
                   </td>
                 </tr>
@@ -224,7 +232,7 @@ export function PerformanceTrendsChart({
               <div className="flex items-center gap-1.5">
                 <span className="w-3 h-3 rounded-full bg-[#6366F1]" />
                 <span className="font-bold text-[#111827] dark:text-[#F8FAFC]">
-                  Brand Mention Rate ({client.brandName})
+                  Aggregate Mention Rate ({client.brandName})
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -235,8 +243,9 @@ export function PerformanceTrendsChart({
               </div>
             </div>
 
-            <div className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] font-mono">
-              Sample Range: {firstPoint?.dateLabel} → {latestPoint?.dateLabel}
+            <div className="text-[11px] text-[#6B7280] dark:text-[#94A3B8] font-mono flex items-center gap-3">
+              <span>5-Cycle Average: <strong>{avgMentionRate}%</strong></span>
+              <span>Sample Range: {firstPoint?.dateLabel} → {latestPoint?.dateLabel}</span>
             </div>
           </div>
 
@@ -273,6 +282,19 @@ export function PerformanceTrendsChart({
 
                 <Tooltip content={<CustomTooltip />} />
 
+                {/* 5-Cycle Average Reference Line */}
+                <ReferenceLine
+                  y={avgMentionRate}
+                  stroke="#94A3B8"
+                  strokeDasharray="4 4"
+                  label={{
+                    value: `Avg: ${avgMentionRate}%`,
+                    position: 'insideTopRight',
+                    fill: '#94A3B8',
+                    fontSize: 10,
+                  }}
+                />
+
                 {/* Subtle Area Fills */}
                 <Area
                   type="monotone"
@@ -291,7 +313,7 @@ export function PerformanceTrendsChart({
                 <Line
                   type="monotone"
                   dataKey="mentionRate"
-                  name="Brand Mention Rate"
+                  name="Aggregate Mention Rate"
                   stroke="#6366F1"
                   strokeWidth={3}
                   activeDot={{ r: 7, strokeWidth: 2, stroke: '#FFFFFF', fill: '#4338CA' }}

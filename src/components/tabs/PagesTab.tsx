@@ -1,10 +1,13 @@
-import { useState, FormEvent } from 'react';
-import { PageAnalysis, Client } from '../../types';
+import { useState, useMemo, FormEvent } from 'react';
+import { PageAnalysis, Client, Run } from '../../types';
 import { Globe, CheckCircle2, AlertTriangle, XCircle, Sparkles, ExternalLink } from 'lucide-react';
+import { DomainLeaderboard } from '../charts/DomainLeaderboard';
+import { computeCitationDomainLeaderboard } from '../../utils/metrics';
 
 interface PagesTabProps {
   client: Client;
   savedAnalyses: PageAnalysis[];
+  runs?: Run[];
   onAnalyzePage: (url: string, rawHtml?: string) => Promise<PageAnalysis>;
   onSaveActionFromPage?: (recommendation: string) => void;
 }
@@ -12,6 +15,7 @@ interface PagesTabProps {
 export function PagesTab({
   client,
   savedAnalyses,
+  runs = [],
   onAnalyzePage,
   onSaveActionFromPage,
 }: PagesTabProps) {
@@ -20,6 +24,10 @@ export function PagesTab({
   const [currentAnalysis, setCurrentAnalysis] = useState<PageAnalysis | null>(
     savedAnalyses[0] || null
   );
+
+  const citationLeaderboard = useMemo(() => {
+    return computeCitationDomainLeaderboard(runs);
+  }, [runs]);
 
   // Check Crawlability State
   const [showCrawlModal, setShowCrawlModal] = useState(false);
@@ -150,6 +158,16 @@ export function PagesTab({
           </button>
         </div>
       </div>
+
+      {/* Citation Domain Leaderboard Visualizer */}
+      {citationLeaderboard.length > 0 && (
+        <DomainLeaderboard
+          leaderboard={citationLeaderboard}
+          totalRuns={runs.length}
+          clientDomain={client.domain}
+          competitorDomains={client.competitorDomains || []}
+        />
+      )}
 
       {/* Analysis Results */}
       {currentAnalysis && (

@@ -1,4 +1,4 @@
-export type EngineId = 'gemini-grounded' | 'perplexity-sonar';
+export type EngineId = 'gemini-grounded';
 
 export interface VisibilityEngineInfo {
   id: EngineId;
@@ -40,6 +40,7 @@ export interface Client {
   isDemo?: boolean;
   defaultRunsPerPrompt?: number;
   scheduledCycleFrequency?: 'off' | 'weekly' | 'biweekly' | 'monthly';
+  autoRunIntervalDays?: number;
   createdAt: string;
 }
 
@@ -238,8 +239,9 @@ export interface PageAnalysis {
 export interface AppSettings {
   defaultRunsPerPrompt: number;
   activeEngine: EngineId;
-  perplexityApiKey?: string;
   scheduledCycleFrequency?: 'off' | 'weekly' | 'biweekly' | 'monthly';
+  firecrawlApiKey?: string;
+  perplexityApiKey?: string;
 }
 
 export interface GoogleIntegrationState {
@@ -251,7 +253,17 @@ export interface GoogleIntegrationState {
   availableGscSites?: Array<{ siteUrl: string; permissionLevel: string }>;
   availableGa4Properties?: Array<{ propertyId: string; displayName: string }>;
   lastSyncAt?: string;
+  clientIdConfigured?: boolean;
+  hasClientId?: boolean;
+  hasClientSecret?: boolean;
+  redirectUri?: string;
   error?: string;
+  accessToken?: string;
+  refreshToken?: string;
+  expiresAt?: number;
+  connected?: boolean;
+  clientId?: string;
+  clientSecret?: string;
 }
 
 export interface GscPerformanceData {
@@ -318,4 +330,91 @@ export interface OpportunityPrompt {
   category: string;
   rationale: string;
   targetCompetitor?: string;
+}
+
+export type BrandMemoryEntityType = 
+  | 'company_overview'
+  | 'product_feature'
+  | 'pricing_plan'
+  | 'competitor_diff'
+  | 'use_case'
+  | 'citation_source'
+  | 'target_audience'
+  | 'faq_fact'
+  | 'ai_perception_insight'
+  | 'gsc_demand_query'
+  | 'ga4_engagement_signal';
+
+export interface BrandMemoryItem {
+  id: string;
+  clientId: string;
+  title: string;
+  entityType: BrandMemoryEntityType;
+  sourceUrl?: string;
+  sourceType: 'crawler' | 'manual' | 'diagnostic_discovery' | 'file_upload' | 'run_cycle_insight' | 'gsc_sync' | 'ga4_sync' | 'ai_synthesized';
+  content: string;
+  keyFacts: string[];
+  embedding?: number[];
+  relevanceScore?: number;
+  confidence: 'High' | 'Medium' | 'Low';
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface BrandGraphNode {
+  id: string;
+  label: string;
+  type: 'brand' | 'product' | 'feature' | 'pricing' | 'competitor' | 'source' | 'gsc_query' | 'ai_insight' | 'synapse';
+  val: number; // size / importance
+  color?: string;
+  details?: string;
+  x?: number;
+  y?: number;
+  z?: number;
+  vx?: number;
+  vy?: number;
+  vz?: number;
+}
+
+export interface BrandGraphLink {
+  source: string;
+  target: string;
+  label?: string;
+  strength?: number;
+}
+
+export interface BrandKnowledgeGraph {
+  nodes: BrandGraphNode[];
+  links: BrandGraphLink[];
+}
+
+export interface BrandMemoryQueryMatch {
+  item: BrandMemoryItem;
+  similarity: number;
+}
+
+export type AeoContentType = 
+  | 'comparison_table'
+  | 'faq_schema_page'
+  | 'product_capability_guide'
+  | 'industry_solution_page'
+  | 'pricing_transparency_page'
+  | 'citation_booster_article';
+
+export interface AeoGeneratedContent {
+  id: string;
+  clientId: string;
+  targetPromptText?: string;
+  contentType: AeoContentType;
+  title: string;
+  slug: string;
+  metaDescription: string;
+  targetH2s: string[];
+  markdownBody: string;
+  structuredDataJsonLd: string; // JSON-LD Schema (FAQPage, Product, etc.)
+  usedMemoryIds: string[];
+  usedMemoryTitles: string[];
+  factCheckStatus: 'Verified with Brand Memory' | 'Requires Verification';
+  createdAt: string;
 }
