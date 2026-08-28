@@ -1,6 +1,0 @@
-{
-  "name": "RAG Signal",
-  "description": "B2B AI Visibility and Answer Engine Optimization (AEO/GEO) intelligence platform for tracking grounded LLM mentions, citations, share of voice, and actionable diagnostics.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
